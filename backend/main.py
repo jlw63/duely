@@ -2,6 +2,8 @@ import random
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+WIN_SCORE = 5
+
 app = FastAPI()
 
 @app.get("/")
@@ -57,11 +59,20 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
     try:
         while True:
             data = await websocket.receive_json()
-            if data.get("type") == "answer" and data.get("value") == games[room_code]["answer"]:
+            if (data.get("type") == "answer"
+                    and games[room_code]["answer"] is not None  #no live round -> nothing can score
+                    and data.get("value") == games[room_code]["answer"]):
                 name = games[room_code]["players"][websocket]
                 games[room_code]["scores"][name] += 1
                 await manager.broadcast(room_code, {"type": "result", "winner": name,
                                                     "scores": games[room_code]["scores"]})
-                await start_round(room_code)
+                #if player reached win_score, broadcast the result and no new round starts
+                if games[room_code]["scores"][name] >= WIN_SCORE:
+                    await manager.broadcast(room_code, {"type": "game_over", "winner": name,
+                                                        "scores": games[room_code]["scores"]})
+                    games [room_code]["answer"] = None  # Reset the answer to None to indicate the game is over
+                else:
+                    await start_round(room_code)
+                
     except WebSocketDisconnect:
         manager.disconnect(websocket, room_code)
