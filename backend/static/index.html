@@ -1,6 +1,8 @@
 <h1>Duely</h1>
 <div id="question">waiting for opponent...</div>
 
+<input id="answer" type="number" placeholder="your answer">
+<button id="send">answer</button>
 
 
 <script>
@@ -12,6 +14,12 @@ ws.onmessage = (e) => {
   if (msg.type === "question") {
     document.getElementById("question").textContent = msg.text;
   }
+};
+
+document.getElementById("send").onclick = () => {
+  const box = document.getElementById("answer");
+  ws.send(JSON.stringify({ type: "answer", value: Number(box.value) }));
+  box.value = "";   // empty the box for the next round
 };
 
 </script>
