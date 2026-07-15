@@ -13,7 +13,7 @@
     margin: 0;
   }
 
-  /* --- brand header: triangles + wordmark, rebuilt in code --- */
+  /* --- brand header --- */
   #logo {
     display: flex;
     align-items: center;
@@ -38,6 +38,17 @@
     margin: 0.75rem 0 3rem;
   }
 
+  /* --- screens: only one of #lobby / #game shows at a time --- */
+  #lobby {
+    display: flex;
+    gap: 0.6rem;
+  }
+  #game {
+    display: none;           /* JS flips this to flex on join */
+    flex-direction: column;
+    align-items: center;
+  }
+
   /* --- game --- */
   #question {
     font-size: 2.6rem;
@@ -52,26 +63,30 @@
     margin-bottom: 2.5rem;
     min-height: 1.4rem;   /* holds the space before first result, so nothing jumps */
   }
-
   #controls {
     display: flex;
     gap: 0.6rem;
   }
-  #answer {
+
+  /* --- shared input/button styling --- */
+  #answer, #room {
     font-size: 1.4rem;
     padding: 0.55rem 0.8rem;
-    width: 8rem;
+    width: 9rem;
     text-align: center;
     background: #1c1e2e;
     color: #f2f3f7;
     border: 2px solid #2c2f45;
     border-radius: 10px;
   }
-  #answer:focus {
+  #room {
+    text-transform: uppercase;   /* room codes display as caps while you type */
+  }
+  #answer:focus, #room:focus {
     outline: none;
     border-color: #00c8ee;
   }
-  #send {
+  #send, #join {
     font-size: 1.2rem;
     font-weight: 700;
     padding: 0.55rem 1.4rem;
@@ -81,10 +96,10 @@
     border-radius: 10px;
     cursor: pointer;
   }
-  #send:hover {
+  #send:hover, #join:hover {
     background: #ff7b73;
   }
-  #send:focus-visible {
+  #send:focus-visible, #join:focus-visible {
     outline: 2px solid #00c8ee;
     outline-offset: 2px;
   }
@@ -97,25 +112,36 @@
 </div>
 <p id="slogan">answer first. win the duel.</p>
 
-<div id="question">waiting for opponent...</div>
-<div id="score"></div>
+<!-- screen 1: the lobby -->
+<div id="lobby">
+  <input id="room" type="text" placeholder="room code" maxlength="12" autofocus>
+  <button id="join">duel</button>
+</div>
 
-<div id="controls">
-  <input id="answer" type="number" placeholder="answer">
-  <button id="send">go</button>
+<!-- screen 2: the game (hidden until a room is joined) -->
+<div id="game">
+  <div id="question">waiting for opponent...</div>
+  <div id="score"></div>
+  <div id="controls">
+    <input id="answer" type="number" placeholder="answer">
+    <button id="send">go</button>
+  </div>
 </div>
 
 <script>
 
-    const room = prompt("enter room code:") || "DUEL";
+    let ws = null;    // no connection yet — born when a room is joined
+    let me = null;
+
+function joinRoom() {
+    const room = document.getElementById("room").value.trim().toUpperCase() || "DUEL";
 
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
     }
-    const ws = new WebSocket(proto + "//" + location.host + "/ws/" + room);
+    ws = new WebSocket(proto + "//" + location.host + "/ws/" + room);
 
-    let me = null;
 ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     console.log("got:", msg);
@@ -140,11 +166,22 @@ ws.onmessage = (e) => {
     }
 };
 
+    // swap screens: lobby out, game in
+    document.getElementById("lobby").style.display = "none";
+    document.getElementById("game").style.display = "flex";
+    document.getElementById("answer").focus();
+}
+
 function sendAnswer() {
   const box = document.getElementById("answer");
   ws.send(JSON.stringify({ type: "answer", value: Number(box.value) }));
   box.value = "";   // empty the box for the next round
 }
+
+document.getElementById("join").onclick = joinRoom;
+document.getElementById("room").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") joinRoom();
+});
 
 document.getElementById("send").onclick = sendAnswer;
 document.getElementById("answer").addEventListener("keydown", (e) => {
