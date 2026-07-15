@@ -6,6 +6,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="/style.css">
 
+<div id="glow" aria-hidden="true"></div>
 <svg class="bg-tri left" viewBox="0 0 100 140" aria-hidden="true"><polygon points="0,0 100,70 0,140" fill="#00b0ff"/></svg>
 <svg class="bg-tri right" viewBox="0 0 100 140" aria-hidden="true"><polygon points="100,0 0,70 100,140" fill="#ff5252"/></svg>
 
@@ -26,6 +27,7 @@
     <input id="room" type="text" placeholder="room code" maxlength="12">
     <button id="join">join</button>
   </div>
+  <p id="lobby-error" role="alert"></p>
 
   <div id="demo" aria-hidden="true">
     <span class="demo-label">last round</span>
@@ -54,14 +56,21 @@
     </div>
     <p id="wait-note">waiting for opponent…</p>
   </div>
-  <div id="question">waiting for opponent...</div>
+  <div id="result-row">
+    <svg id="tri-left" class="result-tri" viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,10 90,50 10,90"/></svg>
+    <div id="question">waiting for opponent...</div>
+    <svg id="tri-right" class="result-tri" viewBox="0 0 100 100" aria-hidden="true"><polygon points="90,10 10,50 90,90"/></svg>
+  </div>
   <div id="pulse"><div></div></div>
   <div id="score">
     <div class="side you"><span class="side-label">you</span><div class="pips" id="my-pips"></div></div>
     <span class="vs">vs</span>
     <div class="side them"><div class="pips" id="their-pips"></div><span class="side-label">them</span></div>
   </div>
-  <div id="fastest" class="stat-line" aria-live="polite"></div>
+  <div id="final-score" aria-hidden="true">
+    <span class="fs-num you" id="fs-you">0</span><span class="fs-dash">&ndash;</span><span class="fs-num them" id="fs-them">0</span>
+  </div>
+  <div id="fastest" aria-live="polite"></div>
   <div id="controls">
     <input id="answer" type="number" inputmode="numeric" placeholder="answer">
     <button id="send">go</button>

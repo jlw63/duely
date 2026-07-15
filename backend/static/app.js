@@ -14,7 +14,15 @@ function setWaiting(w) {
     if (!w) { clearPostgameState(); }
 }
 
+function showLobbyError(text) {
+    leaveRoom();
+    const err = document.getElementById("lobby-error");
+    err.textContent = text;
+    err.classList.add("show");
+}
+
 function joinRoom(room) {
+    document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
@@ -27,7 +35,9 @@ function joinRoom(room) {
         if (!leaving) {
             document.getElementById("question").textContent = "connection lost";
             document.getElementById("pulse").style.display = "none";
-            document.getElementById("again").style.display = "inline-block";
+            document.getElementById("controls").style.display = "none";
+            document.getElementById("rematch").style.display = "none";   // no one to rematch with
+            document.getElementById("postgame-actions").style.display = "flex";  // reveals "back to lobby"
         }
     };
 
@@ -35,6 +45,13 @@ ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     console.log("got:", msg);
     if (msg.type === "question") {
+        // a "question" after postgame-actions was showing means this is a rematch's
+        // first round, not the next round of an ongoing match — pips must go back to 0
+        const isRematchStart = document.getElementById("postgame-actions").style.display !== "none";
+        if (isRematchStart) {
+            renderPips(document.getElementById("my-pips"), 0);
+            renderPips(document.getElementById("their-pips"), 0);
+        }
         setWaiting(false);                                            // opponent's here — match on
         document.getElementById("question").textContent = msg.text;
         document.getElementById("pulse").style.display = "block";   // round is live
@@ -48,8 +65,12 @@ ws.onmessage = (e) => {
         updateScore(msg.scores);
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";  // nothing left to answer
+        document.getElementById("score").style.display = "none";      // pips step aside...
+        document.getElementById("final-score").style.display = "flex"; // ...for a score that reads across the room
         clearPostgameState();
-        if (msg.winner === me) {
+        const won = msg.winner === me;
+        document.body.classList.add("match-over", won ? "won" : "lost");
+        if (won) {
             document.getElementById("question").textContent = "you won the duel!";
             document.getElementById("question").classList.add("winner");
             showCelebration(true);
@@ -59,7 +80,7 @@ ws.onmessage = (e) => {
             showCelebration(false);
         }
         if (msg.fastest) {
-            setStatLine(`fastest answer: ${msg.fastest.time}s`);
+            buildFastestStat(msg.fastest);
         }
         document.getElementById("rematch").style.display = "inline-block";
         document.getElementById("postgame-actions").style.display = "flex";
@@ -85,7 +106,15 @@ ws.onmessage = (e) => {
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";
-        document.getElementById("again").style.display = "inline-block";
+        document.getElementById("score").style.display = "none";
+        document.getElementById("final-score").style.display = "flex";  // the score as it stood when they bailed
+        document.getElementById("rematch").style.display = "none";   // no one to rematch with
+        document.getElementById("postgame-actions").style.display = "flex";  // reveals "back to lobby"
+        document.body.classList.add("match-over");   // header trims; no won/lost — nobody actually won this
+    }
+    if (msg.type === "room_full") {
+        leaving = true;   // this close is expected — don't let onclose show "connection lost"
+        showLobbyError("that room already has two players — try a different code.");
     }
     if (msg.type === "welcome") {
         me = msg.name;
@@ -124,6 +153,8 @@ function updateScore(scores) {
     }
     renderPips(document.getElementById("my-pips"), mine);
     renderPips(document.getElementById("their-pips"), theirs);
+    document.getElementById("fs-you").textContent = mine;
+    document.getElementById("fs-them").textContent = theirs;
 }
 
 // --- round feedback: flash the question cyan (you scored) or coral (they did) ---
@@ -165,8 +196,7 @@ function leaveRoom() {
     chip.textContent = "connecting...";
     chip.classList.remove("cyan");
     document.getElementById("answer").value = "";
-    document.getElementById("again").style.display = "none";
-    clearPostgameState();
+    clearPostgameState();   // hides postgame-actions, which #again lives inside — no separate reset needed
     // swap screens back
     document.getElementById("game").style.display = "none";
     document.getElementById("lobby").style.display = "flex";
@@ -223,10 +253,14 @@ function setPostgameStatus(text) {
     note.style.display = text ? "block" : "none";
 }
 
-function setStatLine(text) {
+// labeled pill: "FASTEST ANSWER  you · 2.49s" — whose it was reads from the color, same as the score side-labels
+function buildFastestStat(fastest) {
     const stat = document.getElementById("fastest");
-    stat.textContent = text || "";
-    stat.style.display = text ? "block" : "none";
+    const whoIsMe = fastest.name === me;
+    stat.innerHTML = '<span class="stat-label">fastest answer</span>'
+        + '<span class="stat-value ' + (whoIsMe ? "you" : "them") + '">'
+        + (whoIsMe ? "you" : "them") + ' &middot; ' + fastest.time + 's</span>';
+    stat.classList.add("show");
 }
 
 function clearPostgameState() {
@@ -237,9 +271,12 @@ function clearPostgameState() {
     rematchBtn.textContent = "rematch";
     document.getElementById("postgame-actions").style.display = "none";
     setPostgameStatus("");
-    setStatLine("");
+    document.getElementById("fastest").classList.remove("show");
     showCelebration(false);
     document.getElementById("question").classList.remove("winner", "loser");
+    document.body.classList.remove("match-over", "won", "lost");   // header/glow/triangles reset for the next match
+    document.getElementById("final-score").style.display = "none";
+    document.getElementById("score").style.display = "flex";        // pips return for live play
 }
 
 function showCelebration(show) {

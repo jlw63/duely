@@ -24,6 +24,24 @@
     overflow-x: hidden;
   }
 
+  /* --- ambient glow: tints the whole scene toward the winner's color --- */
+  #glow {
+    position: fixed;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -2;
+    transition: opacity 0.6s ease;
+  }
+  body.match-over.won #glow {
+    opacity: 1;
+    background: radial-gradient(ellipse 60% 50% at 50% 38%, rgba(0, 176, 255, 0.16), transparent 70%);
+  }
+  body.match-over.lost #glow {
+    opacity: 1;   /* subtler than a win — coral gets to have the moment, quietly */
+    background: radial-gradient(ellipse 60% 50% at 50% 38%, rgba(255, 82, 82, 0.09), transparent 70%);
+  }
+
   /* --- ambient background triangles, drifting toward the face-off --- */
   .bg-tri {
     position: fixed;
@@ -48,6 +66,11 @@
     #question.flash-you, #question.flash-them { animation: none; }
     .pip.filled { animation: none; }
     #wait-anim svg, #wait-note { animation: none; }
+    #celebration.show span { animation: none; }
+    #glow { transition: none; }
+    #result-row { transition: none; }
+    .result-tri { transition: none; }
+    body.match-over #question { animation: none; }
     button { transition: none; }
   }
 
@@ -112,6 +135,12 @@
   body.playing #slogan,
   body.playing #tagline { display: none; }
 
+  /* --- once the match ends, the header simplifies: logo + room code only.
+     "you're cyan" and "leave" were relevant mid-match; post-match, "back to
+     lobby" already covers the exit, so showing both reads as redundant. --- */
+  body.match-over #me-chip,
+  body.match-over #leave { display: none; }
+
   /* --- screens: only one of #lobby / #game shows at a time --- */
   #lobby {
     display: flex;
@@ -157,6 +186,15 @@
     font-size: 0.8rem;
     margin: -0.5rem 0 0.3rem;   /* snug under the create button — it de-risks that click */
   }
+
+  /* a room already has two players — told plainly, not a silent merge */
+  #lobby-error {
+    display: none;
+    color: var(--red);
+    font-size: 0.85rem;
+    margin: -0.4rem 0 0;
+  }
+  #lobby-error.show { display: block; }
 
   /* --- mock round: proof of gameplay, no interaction --- */
   #demo {
@@ -241,7 +279,8 @@
     background: rgba(255, 82, 82, 0.1);
   }
   #again {
-    display: none;           /* appears when a game ends */
+    /* visibility is controlled by its parent #postgame-actions, not its own display —
+       a button toggling its own inline style would fight the container for control */
     margin-top: 1.8rem;
     background: var(--panel);
     color: var(--text);
@@ -255,39 +294,90 @@
   #postgame-status {
     color: var(--soft);
     font-size: 0.95rem;
-    margin: 0 0 1rem;
+    margin: 0 0 1.2rem;
     display: none;
     text-transform: uppercase;
     letter-spacing: 0.16em;
   }
+
+  /* the fastest-answer stat: a labeled pill, not orphaned text — whose time
+     it is reads at a glance from the color, same language as the score side-labels */
   #fastest {
-    color: var(--soft);
-    font-size: 0.95rem;
-    margin-bottom: 1rem;
     display: none;
-    letter-spacing: 0.02em;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.5rem;
+    padding: 0.45rem 1.1rem;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    font-size: 0.86rem;
   }
+  #fastest.show { display: flex; }
+  #fastest .stat-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  #fastest .stat-value { font-weight: 700; }
+  #fastest .stat-value.you  { color: var(--blue); }
+  #fastest .stat-value.them { color: var(--red); }
+
   #postgame-actions {
     display: none;
-    gap: 0.8rem;
+    gap: 1rem;
     flex-wrap: wrap;
     justify-content: center;
-    margin-top: 0.4rem;
+    margin-top: 0.6rem;
+  }
+  /* rematch and back-to-lobby are true peers: identical box, identical border
+     width — only fill/color differs. (Different border widths were the bug:
+     an unbordered filled button next to a 2px-bordered ghost button never
+     line up on the same height.) */
+  #postgame-actions button {
+    font-size: 1.1rem;
+    padding: 0.75rem 2rem;
+    min-width: 9.5rem;
+    border-width: 2px;
+    border-style: solid;
   }
   button.primary {
     background: var(--blue);
+    border-color: var(--blue);
     color: var(--ink);
   }
-  button.primary:hover { background: #33c1ff; }
+  button.primary:hover { background: #33c1ff; border-color: #33c1ff; }
   button.secondary {
     background: var(--panel);
     color: var(--text);
-    border: 2px solid var(--edge);
+    border-color: var(--edge);
   }
   button.secondary:hover {
     background: rgba(255,255,255,0.05);
     border-color: #4d5b8e;
   }
+
+  /* --- the win/lose moment: the flanking triangles echo the logo's face-off,
+     converging on the result the way the whole brand has been building toward --- */
+  #result-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    transition: gap 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  body.match-over.won #result-row { gap: 1.1rem; }
+  .result-tri {
+    width: 0;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s ease;
+  }
+  body.match-over.won .result-tri { width: 1.8rem; opacity: 1; }
+  #tri-left polygon  { fill: var(--blue); }
+  #tri-right polygon { fill: var(--red); }
+
   #question {
     font-size: clamp(2.8rem, 11vw, 4.2rem);   /* the math is the star during play */
     font-weight: 800;
@@ -296,6 +386,29 @@
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+  /* the result deserves more scale than a single round ever gets, plus a
+     one-time entrance so it reads as an EVENT rather than a status label */
+  body.match-over #question {
+    font-size: clamp(3.1rem, 12vw, 5rem);
+    animation: result-pop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @keyframes result-pop {
+    from { opacity: 0; transform: scale(0.85) translateY(8px); }
+  }
+
+  /* --- the final score: legible across the room, not squinted at as pips --- */
+  #final-score {
+    display: none;
+    align-items: baseline;
+    gap: 0.7rem;
+    font-size: clamp(2.6rem, 10vw, 3.6rem);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    margin: 0.3rem 0 1.8rem;
+  }
+  .fs-num.you  { color: var(--blue); }
+  .fs-num.them { color: var(--red); }
+  .fs-dash { color: var(--dim); font-weight: 400; }
   /* round feedback: a color flash — cyan when you take it, coral when they do */
   #question.flash-you  { animation: flash-you 0.7s ease-out; }
   #question.flash-them { animation: flash-them 0.7s ease-out; }

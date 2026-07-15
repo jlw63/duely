@@ -50,15 +50,34 @@ async def start_round(room_code):
 async def websocket_endpoint(websocket: WebSocket, room_code: str):
     await manager.connect(websocket, room_code)
 
+    # duels are 1v1 — reject a third connection instead of silently merging
+    # them into someone else's match (easy to hit: an empty join box
+    # defaults to room "DUEL" for everyone who doesn't type a code)
+    if len(manager.rooms[room_code]) > 2:
+        await websocket.send_json({"type": "room_full"})
+        manager.disconnect(websocket, room_code)
+        await websocket.close()
+        return
+
     if room_code not in games:
+        # fresh game state. Register EVERY socket currently in this room, not
+        # just this one — a previous match's survivor may still be connected
+        # (their old game state was deleted when their opponent left) and
+        # would otherwise be missing from "players"/"scores" here, crashing
+        # the moment they try to answer.
         games[room_code] = {"answer": None, "scores": {}, "players": {},
                              "question_time": None, "fastest": None, "rematch_requests": set()}
-
-    player_name = f"player{len(manager.rooms[room_code])}"
-    games[room_code]["players"][websocket] = player_name
-    games[room_code]["scores"][player_name] = 0
-
-    await websocket.send_json({"type": "welcome", "name": player_name})
+        for i, sock in enumerate(manager.rooms[room_code], start=1):
+            name = f"player{i}"
+            games[room_code]["players"][sock] = name
+            games[room_code]["scores"][name] = 0
+            await sock.send_json({"type": "welcome", "name": name})
+    else:
+        # game already exists — this is a normal second player joining
+        player_name = f"player{len(manager.rooms[room_code])}"
+        games[room_code]["players"][websocket] = player_name
+        games[room_code]["scores"][player_name] = 0
+        await websocket.send_json({"type": "welcome", "name": player_name})
 
     if len(manager.rooms[room_code]) == 2:
         await start_round(room_code)
