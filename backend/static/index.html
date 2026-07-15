@@ -1,16 +1,52 @@
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2312131e'/><polygon points='20,30 47,50 20,70' fill='%2300c8ee'/><polygon points='80,30 53,50 80,70' fill='%23ff6259'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2312131e'/><polygon points='16,26 50,50 16,74' fill='%2300b0ff'/><polygon points='84,26 50,50 84,74' fill='%23ff5252'/></svg>">
 <title>duely</title>
 
 <style>
+  :root {
+    --ink: #12131e;
+    --panel: #1c1e2e;
+    --edge: #2c2f45;
+    --text: #f2f3f7;
+    --dim: #8b8fa8;
+    --blue: #00b0ff;
+    --red: #ff5252;
+  }
+
   body {
     font-family: "Segoe UI", system-ui, sans-serif;
-    background: #12131e;
-    color: #f2f3f7;
+    background: var(--ink);
+    color: var(--text);
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 12vh;
+    justify-content: center;      /* hero sits at the visual center, not the top third */
+    min-height: 100vh;
+    padding: 2rem 1rem;
     margin: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  /* --- ambient background triangles, drifting toward the face-off --- */
+  .bg-tri {
+    position: fixed;
+    top: 50%;
+    width: 42vh;
+    height: 60vh;
+    opacity: 0.09;
+    pointer-events: none;
+    z-index: -1;
+    transform: translateY(-50%);
+  }
+  .bg-tri.left  { left: -6vh;  animation: drift-l 6s ease-in-out infinite alternate; }
+  .bg-tri.right { right: -6vh; animation: drift-r 6s ease-in-out infinite alternate; }
+  @keyframes drift-l { to { transform: translateY(-50%) translateX(2.5vh); } }
+  @keyframes drift-r { to { transform: translateY(-50%) translateX(-2.5vh); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bg-tri.left, .bg-tri.right { animation: none; }
+    #game { animation: none; }
+    button { transition: none; }
   }
 
   /* --- brand header --- */
@@ -21,44 +57,112 @@
     user-select: none;
   }
   #logo svg {
-    width: 1.6rem;
-    height: 1.6rem;
+    width: 1.5rem;
+    height: 1.5rem;
   }
   #wordmark {
-    font-size: 3.2rem;
+    font-size: clamp(2.4rem, 8vw, 3.2rem);
     font-weight: 900;
     letter-spacing: -0.03em;
     line-height: 1;
   }
   #slogan {
-    color: #8b8fa8;
+    color: var(--dim);
     letter-spacing: 0.22em;
     text-transform: uppercase;
-    font-size: 0.75rem;
-    margin: 0.75rem 0 3rem;
+    font-size: 0.72rem;
+    margin: 0.8rem 0 0.6rem;
+    text-align: center;
+  }
+  #tagline {
+    color: var(--text);
+    font-size: 1.05rem;
+    margin: 0 0 2.6rem;
+    text-align: center;
   }
 
   /* --- screens: only one of #lobby / #game shows at a time --- */
   #lobby {
     display: flex;
-    gap: 0.6rem;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.1rem;
   }
+  #create {
+    font-size: 1.35rem;
+    padding: 0.8rem 2.4rem;
+  }
+  .divider {
+    color: var(--dim);
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 0.2rem 0 0;
+  }
+
+  /* input + button fused into one pill group */
+  .pill-group {
+    display: flex;
+  }
+  .pill-group input {
+    border-radius: 10px 0 0 10px;
+    border-right: none;
+    width: 10rem;
+  }
+  .pill-group button {
+    border-radius: 0 10px 10px 0;
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
+    border-left: none;
+    font-size: 1rem;
+  }
+  .pill-group button:hover { background: var(--edge); }
+  .pill-group:focus-within input,
+  .pill-group:focus-within button { border-color: var(--blue); }
+
+  .trust {
+    color: var(--dim);
+    font-size: 0.8rem;
+    margin: 0.4rem 0 0;
+  }
+
   #game {
     display: none;           /* JS flips this to flex on join */
     flex-direction: column;
     align-items: center;
+    animation: rise 0.35s ease-out;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
   }
 
-  /* --- game --- */
+  /* --- game screen --- */
+  #meta {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .chip {
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    padding: 0.3rem 0.9rem;
+  }
   #question {
-    font-size: 2.6rem;
+    font-size: clamp(2rem, 7vw, 2.8rem);
     font-weight: 600;
     margin: 0 0 0.75rem;
     text-align: center;
   }
   #score {
     font-size: 1.1rem;
-    color: #8b8fa8;
+    color: var(--dim);
     font-variant-numeric: tabular-nums;
     margin-bottom: 2.5rem;
     min-height: 1.4rem;   /* holds the space before first result, so nothing jumps */
@@ -69,57 +173,80 @@
   }
 
   /* --- shared input/button styling --- */
-  #answer, #room {
+  input {
     font-size: 1.4rem;
+    font-family: inherit;
     padding: 0.55rem 0.8rem;
-    width: 9rem;
+    width: 11rem;
     text-align: center;
-    background: #1c1e2e;
-    color: #f2f3f7;
-    border: 2px solid #2c2f45;
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
     border-radius: 10px;
+    box-sizing: border-box;
   }
-  #room {
-    text-transform: uppercase;   /* room codes display as caps while you type */
+  input::placeholder {
+    color: var(--dim);
+    font-size: 1rem;
+    letter-spacing: 0.08em;
   }
-  #answer:focus, #room:focus {
+  #room { text-transform: uppercase; }
+  input:focus {
     outline: none;
-    border-color: #00c8ee;
+    border-color: var(--blue);
   }
-  #send, #join {
+  #answer::-webkit-inner-spin-button,
+  #answer::-webkit-outer-spin-button { -webkit-appearance: none; }
+  #answer { -moz-appearance: textfield; appearance: textfield; }
+
+  button {
     font-size: 1.2rem;
     font-weight: 700;
+    font-family: inherit;
     padding: 0.55rem 1.4rem;
-    background: #ff6259;
-    color: #12131e;
+    background: var(--red);
+    color: var(--ink);
     border: none;
     border-radius: 10px;
     cursor: pointer;
+    transition: background 0.15s, transform 0.08s;
   }
-  #send:hover, #join:hover {
-    background: #ff7b73;
-  }
-  #send:focus-visible, #join:focus-visible {
-    outline: 2px solid #00c8ee;
+  button:hover { background: #ff6b6b; }
+  button:active { transform: scale(0.96); }
+  button:focus-visible {
+    outline: 2px solid var(--blue);
     outline-offset: 2px;
   }
 </style>
 
+<svg class="bg-tri left" viewBox="0 0 100 140" aria-hidden="true"><polygon points="0,0 100,70 0,140" fill="#00b0ff"/></svg>
+<svg class="bg-tri right" viewBox="0 0 100 140" aria-hidden="true"><polygon points="100,0 0,70 100,140" fill="#ff5252"/></svg>
+
 <div id="logo">
-  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,10 90,50 10,90" fill="#00c8ee"/></svg>
+  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,10 90,50 10,90" fill="#00b0ff"/></svg>
   <div id="wordmark">duely</div>
-  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="90,10 10,50 90,90" fill="#ff6259"/></svg>
+  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="90,10 10,50 90,90" fill="#ff5252"/></svg>
 </div>
 <p id="slogan">answer first. win the duel.</p>
+<p id="tagline">1v1 mental math — fastest correct answer takes the round, first to 5 wins.</p>
 
 <!-- screen 1: the lobby -->
 <div id="lobby">
-  <input id="room" type="text" placeholder="room code" maxlength="12" autofocus>
-  <button id="join">duel</button>
+  <button id="create">create a duel</button>
+  <p class="divider">have a code?</p>
+  <div class="pill-group">
+    <input id="room" type="text" placeholder="room code" maxlength="12">
+    <button id="join">join</button>
+  </div>
+  <p class="trust">free · no signup · 2-minute matches</p>
 </div>
 
 <!-- screen 2: the game (hidden until a room is joined) -->
 <div id="game">
+  <div id="meta">
+    <span class="chip" id="room-chip"></span>
+    <span class="chip" id="me-chip">connecting...</span>
+  </div>
   <div id="question">waiting for opponent...</div>
   <div id="score"></div>
   <div id="controls">
@@ -133,9 +260,7 @@
     let ws = null;    // no connection yet — born when a room is joined
     let me = null;
 
-function joinRoom() {
-    const room = document.getElementById("room").value.trim().toUpperCase() || "DUEL";
-
+function joinRoom(room) {
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
@@ -163,13 +288,30 @@ ws.onmessage = (e) => {
     }
     if (msg.type === "welcome") {
         me = msg.name;
+        document.getElementById("me-chip").textContent = "you are " + me;
     }
 };
 
     // swap screens: lobby out, game in
+    document.getElementById("room-chip").textContent = "room: " + room;
     document.getElementById("lobby").style.display = "none";
     document.getElementById("game").style.display = "flex";
     document.getElementById("answer").focus();
+}
+
+function createDuel() {
+    // mint a shareable 4-letter code; the backend accepts any room string
+    const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // no I/O — they read as 1/0
+    let code = "";
+    for (let i = 0; i < 4; i++) {
+        code += letters[Math.floor(Math.random() * letters.length)];
+    }
+    joinRoom(code);
+}
+
+function joinTyped() {
+    const room = document.getElementById("room").value.trim().toUpperCase() || "DUEL";
+    joinRoom(room);
 }
 
 function sendAnswer() {
@@ -178,9 +320,10 @@ function sendAnswer() {
   box.value = "";   // empty the box for the next round
 }
 
-document.getElementById("join").onclick = joinRoom;
+document.getElementById("create").onclick = createDuel;
+document.getElementById("join").onclick = joinTyped;
 document.getElementById("room").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") joinRoom();
+  if (e.key === "Enter") joinTyped();
 });
 
 document.getElementById("send").onclick = sendAnswer;
