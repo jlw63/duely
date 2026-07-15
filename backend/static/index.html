@@ -1,2 +1,17 @@
 <h1>Duely</h1>
-<p>it's alive</p>
+<div id="question">waiting for opponent...</div>
+
+
+
+<script>
+  const ws = new WebSocket("ws://localhost:8000/ws/DUEL");
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  console.log("got:", msg);
+  if (msg.type === "question") {
+    document.getElementById("question").textContent = msg.text;
+  }
+};
+
+</script>
