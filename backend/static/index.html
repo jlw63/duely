@@ -9,7 +9,7 @@
 
 <script>
   const ws = new WebSocket("ws://localhost:8000/ws/DUEL");
-
+    let me = null;
 ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     console.log("got:", msg);
@@ -17,13 +17,20 @@ ws.onmessage = (e) => {
         document.getElementById("question").textContent = msg.text;
     }
     if (msg.type === "result") {
-        document.getElementById("question").textContent = msg.winner + " wins the game!";
+        document.getElementById("score").textContent = "player1: " + msg.scores.player1 + " - player2: " + msg.scores.player2;
     }
     if(msg.type === "game_over") {
-        document.getElementById("question").textContent = msg.text;
+        if (msg.winner === me) {
+            document.getElementById("question").textContent = "you won the game!";
+        } else {
+            document.getElementById("question").textContent = "you lost the game!";
+        }
     }
     if (msg.type === "opponent_left") {
         document.getElementById("question").textContent = "opponent left the game";
+    }
+    if (msg.type === "welcome") {
+        me = msg.name;
     }
 };
 

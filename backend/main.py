@@ -55,6 +55,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
     games[room_code]["players"][websocket] = player_name
     games[room_code]["scores"][player_name] = 0
 
+    await websocket.send_json({"type": "welcome", "name": player_name})
+
     if len(manager.rooms[room_code]) == 2:
         await start_round(room_code)
 
