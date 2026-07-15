@@ -55,6 +55,7 @@
     #pulse div { animation: none; width: 100%; }
     #question.flash-you, #question.flash-them { animation: none; }
     .pip.filled { animation: none; }
+    #wait-anim svg, #wait-note { animation: none; }
     button { transition: none; }
   }
 
@@ -98,11 +99,24 @@
   }
 
   /* --- during play the brand steps aside; the math takes the stage --- */
-  body.playing { justify-content: flex-start; }   /* header docks to the top… */
-  body.playing #game { flex: 1; justify-content: center; }  /* …game centers in what's left */
+  body.playing #game { flex: 1; justify-content: center; }  /* game owns the whole viewport */
+  body.playing #logo {
+    position: fixed;              /* wordmark docks top-left, like a status bar */
+    top: 1rem;
+    left: 1.2rem;
+    z-index: 10;
+  }
   body.playing #logo svg { width: 0.85rem; height: 0.85rem; }
   body.playing #wordmark { font-size: 1.4rem; }
-  body.playing #logo { margin-bottom: 1rem; }
+  body.playing #meta {
+    position: fixed;              /* session chips dock top-right */
+    top: 1.1rem;
+    right: 1.2rem;
+    margin: 0;
+    z-index: 10;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
   body.playing #slogan,
   body.playing #tagline { display: none; }
 
@@ -283,6 +297,45 @@
     to   { transform: translateX(215%); }
   }
 
+  /* --- waiting room: the code is the hero; its job is getting shared --- */
+  #wait {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+  }
+  .wait-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--soft);
+  }
+  #invite-code {
+    font-size: clamp(2.8rem, 11vw, 4.2rem);
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1;
+  }
+  #copy { background: var(--blue); }
+  #copy:hover { background: #33c1ff; }
+  #wait-anim {
+    display: flex;
+    gap: 2.4rem;
+    margin-top: 1.4rem;
+  }
+  #wait-anim svg { width: 1.2rem; height: 1.2rem; }
+  #wait-anim svg:first-child { animation: seek-l 1.4s ease-in-out infinite alternate; }
+  #wait-anim svg:last-child  { animation: seek-r 1.4s ease-in-out infinite alternate; }
+  @keyframes seek-l { to { transform: translateX(1rem); } }
+  @keyframes seek-r { to { transform: translateX(-1rem); } }
+  #wait-note {
+    color: var(--soft);      /* it's the screen's status line — readable first, animated second */
+    font-size: 0.95rem;
+    margin: 0;
+    animation: breathe 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes breathe { from { opacity: 0.45; } to { opacity: 1; } }
+
   /* first-to-5 as pips: read the standings in a glance, not a sentence */
   #score {
     display: flex;
@@ -422,6 +475,16 @@
     <span class="chip" id="me-chip">connecting...</span>
     <button class="chip" id="leave">&#8592; leave</button>
   </div>
+  <div id="wait">
+    <span class="wait-label">your room code</span>
+    <div id="invite-code"></div>
+    <button id="copy">copy invite link</button>
+    <div id="wait-anim" aria-hidden="true">
+      <svg viewBox="0 0 100 100"><polygon points="10,10 90,50 10,90" fill="#00b0ff"/></svg>
+      <svg viewBox="0 0 100 100"><polygon points="90,10 10,50 90,90" fill="#ff5252"/></svg>
+    </div>
+    <p id="wait-note">waiting for opponent…</p>
+  </div>
   <div id="question">waiting for opponent...</div>
   <div id="pulse"><div></div></div>
   <div id="score">
@@ -440,7 +503,18 @@
 
     let ws = null;    // no connection yet — born when a room is joined
     let me = null;
+    let currentRoom = null;
     let leaving = false;   // true while WE chose to close, so onclose stays quiet
+
+// waiting = code-sharing hero; match = question + pips + input. Never both.
+function setWaiting(w) {
+    document.getElementById("wait").style.display = w ? "flex" : "none";
+    document.getElementById("question").style.display = w ? "none" : "block";
+    document.getElementById("score").style.display = w ? "none" : "flex";
+    document.getElementById("controls").style.display = w ? "none" : "flex";
+    document.getElementById("room-chip").style.display = w ? "none" : "";  // hero code IS the room; chip returns for the match
+    if (w) { document.getElementById("pulse").style.display = "none"; }
+}
 
 function joinRoom(room) {
     let proto = "ws:";
@@ -463,6 +537,7 @@ ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     console.log("got:", msg);
     if (msg.type === "question") {
+        setWaiting(false);                                            // opponent's here — match on
         document.getElementById("question").textContent = msg.text;
         document.getElementById("pulse").style.display = "block";   // round is live
         document.getElementById("answer").focus();                   // hands on keys, every round
@@ -474,6 +549,7 @@ ws.onmessage = (e) => {
     if(msg.type === "game_over") {
         updateScore(msg.scores);
         document.getElementById("pulse").style.display = "none";
+        document.getElementById("controls").style.display = "none";  // nothing left to answer
         if (msg.winner === me) {
             document.getElementById("question").textContent = "you won the game!";
         } else {
@@ -482,8 +558,10 @@ ws.onmessage = (e) => {
         document.getElementById("again").style.display = "inline-block";
     }
     if (msg.type === "opponent_left") {
+        setWaiting(false);   // in case they bailed before the match even started
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
+        document.getElementById("controls").style.display = "none";
         document.getElementById("again").style.display = "inline-block";
     }
     if (msg.type === "welcome") {
@@ -494,14 +572,17 @@ ws.onmessage = (e) => {
     }
 };
 
-    // swap screens: lobby out, game in
+    // swap screens: lobby out, game in (waiting state: share the code)
+    currentRoom = room;
     document.getElementById("room-chip").textContent = "room: " + room;
+    document.getElementById("invite-code").textContent = room;
+    document.getElementById("copy").textContent = "copy invite link";
     document.getElementById("lobby").style.display = "none";
     document.getElementById("game").style.display = "flex";
     document.body.classList.add("playing");   // header steps aside
     renderPips(document.getElementById("my-pips"), 0);
     renderPips(document.getElementById("their-pips"), 0);
-    document.getElementById("answer").focus();
+    setWaiting(true);
 }
 
 // --- score pips: 5 per side, you=cyan, them=coral ---
@@ -575,6 +656,13 @@ function sendAnswer() {
   box.value = "";   // empty the box for the next round
 }
 
+document.getElementById("copy").onclick = () => {
+    navigator.clipboard.writeText(location.origin + "/?room=" + currentRoom);
+    const btn = document.getElementById("copy");
+    btn.textContent = "copied ✓";
+    setTimeout(() => { btn.textContent = "copy invite link"; }, 1500);
+};
+
 document.getElementById("leave").onclick = leaveRoom;
 document.getElementById("again").onclick = leaveRoom;
 document.getElementById("create").onclick = createDuel;
@@ -587,5 +675,11 @@ document.getElementById("send").onclick = sendAnswer;
 document.getElementById("answer").addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendAnswer();
 });
+
+// invite links: /?room=XNDS joins straight into the room, no lobby
+const inviteRoom = new URLSearchParams(location.search).get("room");
+if (inviteRoom) {
+    joinRoom(inviteRoom.trim().toUpperCase());
+}
 
 </script>
