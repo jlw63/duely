@@ -8,7 +8,15 @@
 
 
 <script>
-  const ws = new WebSocket("ws://localhost:8000/ws/DUEL");
+    
+    const room = prompt("enter room code:") || "DUEL"; 
+
+    let proto = "ws:";
+    if (location.protocol === "https:") {
+        proto = "wss:";
+    }
+    const ws = new WebSocket(proto + "//" + location.host + "/ws/" + room);
+
     let me = null;
 ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
