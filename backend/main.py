@@ -1,12 +1,14 @@
 import random
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+
 
 WIN_SCORE = 5
 
 app = FastAPI()
 
-@app.get("/")
+@app.get("/health")
 def health():
     return {"status": "ok"}
 
@@ -60,6 +62,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         while True:
             data = await websocket.receive_json()
             if (data.get("type") == "answer"
+                    and room_code in games
                     and games[room_code]["answer"] is not None  #no live round -> nothing can score
                     and data.get("value") == games[room_code]["answer"]):
                 name = games[room_code]["players"][websocket]
@@ -76,3 +79,9 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 
     except WebSocketDisconnect:
         manager.disconnect(websocket, room_code)
+        if room_code in games:
+            del games[room_code]
+        if room_code in manager.rooms:
+            await manager.broadcast(room_code, {"type": "opponent_left"})
+        
+app.mount("/", StaticFiles(directory="static", html=True))
