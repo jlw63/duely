@@ -154,6 +154,30 @@
     border-radius: 999px;
     padding: 0.3rem 0.9rem;
   }
+  button.chip {          /* the leave control: chip-shaped, but clearly clickable */
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--red);
+    border-color: rgba(255, 82, 82, 0.4);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  button.chip:hover {
+    border-color: var(--red);
+    background: rgba(255, 82, 82, 0.1);
+  }
+  #again {
+    display: none;           /* appears when a game ends */
+    margin-top: 1.8rem;
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
+    font-size: 1rem;
+  }
+  #again:hover {
+    background: var(--panel);
+    border-color: var(--blue);
+  }
   #question {
     font-size: clamp(2rem, 7vw, 2.8rem);
     font-weight: 600;
@@ -246,6 +270,7 @@
   <div id="meta">
     <span class="chip" id="room-chip"></span>
     <span class="chip" id="me-chip">connecting...</span>
+    <button class="chip" id="leave">&#8592; leave</button>
   </div>
   <div id="question">waiting for opponent...</div>
   <div id="score"></div>
@@ -253,19 +278,30 @@
     <input id="answer" type="number" placeholder="answer">
     <button id="send">go</button>
   </div>
+  <button id="again">back to lobby</button>
 </div>
 
 <script>
 
     let ws = null;    // no connection yet — born when a room is joined
     let me = null;
+    let leaving = false;   // true while WE chose to close, so onclose stays quiet
 
 function joinRoom(room) {
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
     }
+    leaving = false;
     ws = new WebSocket(proto + "//" + location.host + "/ws/" + room);
+
+    // the connection died and it wasn't us: say so, offer the exit
+    ws.onclose = () => {
+        if (!leaving) {
+            document.getElementById("question").textContent = "connection lost";
+            document.getElementById("again").style.display = "inline-block";
+        }
+    };
 
 ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -282,9 +318,11 @@ ws.onmessage = (e) => {
         } else {
             document.getElementById("question").textContent = "you lost the game!";
         }
+        document.getElementById("again").style.display = "inline-block";
     }
     if (msg.type === "opponent_left") {
         document.getElementById("question").textContent = "opponent left the game";
+        document.getElementById("again").style.display = "inline-block";
     }
     if (msg.type === "welcome") {
         me = msg.name;
@@ -314,12 +352,32 @@ function joinTyped() {
     joinRoom(room);
 }
 
+function leaveRoom() {
+    leaving = true;        // set BEFORE close(), so our own onclose stays quiet
+    if (ws) ws.close();
+    ws = null;
+    me = null;
+    // reset the game screen to its factory state for next time
+    document.getElementById("question").textContent = "waiting for opponent...";
+    document.getElementById("score").textContent = "";
+    document.getElementById("me-chip").textContent = "connecting...";
+    document.getElementById("answer").value = "";
+    document.getElementById("again").style.display = "none";
+    // swap screens back
+    document.getElementById("game").style.display = "none";
+    document.getElementById("lobby").style.display = "flex";
+    document.getElementById("room").focus();
+}
+
 function sendAnswer() {
+  if (!ws) return;   // no live connection, nothing to send
   const box = document.getElementById("answer");
   ws.send(JSON.stringify({ type: "answer", value: Number(box.value) }));
   box.value = "";   // empty the box for the next round
 }
 
+document.getElementById("leave").onclick = leaveRoom;
+document.getElementById("again").onclick = leaveRoom;
 document.getElementById("create").onclick = createDuel;
 document.getElementById("join").onclick = joinTyped;
 document.getElementById("room").addEventListener("keydown", (e) => {
