@@ -52,6 +52,9 @@
     .bg-tri.left, .bg-tri.right { animation: none; }
     #logo svg { animation: none; }
     #game { animation: none; }
+    #pulse div { animation: none; width: 100%; }
+    #question.flash-you, #question.flash-them { animation: none; }
+    .pip.filled { animation: none; }
     button { transition: none; }
   }
 
@@ -76,6 +79,7 @@
     font-weight: 900;
     letter-spacing: -0.03em;
     line-height: 1;
+    text-decoration: none;    /* the logo is never a link, never underlined */
   }
   #slogan {
     color: var(--dim);
@@ -92,6 +96,15 @@
     margin: 0 0 2.6rem;
     text-align: center;
   }
+
+  /* --- during play the brand steps aside; the math takes the stage --- */
+  body.playing { justify-content: flex-start; }   /* header docks to the top… */
+  body.playing #game { flex: 1; justify-content: center; }  /* …game centers in what's left */
+  body.playing #logo svg { width: 0.85rem; height: 0.85rem; }
+  body.playing #wordmark { font-size: 1.4rem; }
+  body.playing #logo { margin-bottom: 1rem; }
+  body.playing #slogan,
+  body.playing #tagline { display: none; }
 
   /* --- screens: only one of #lobby / #game shows at a time --- */
   #lobby {
@@ -234,18 +247,91 @@
     border-color: var(--blue);
   }
   #question {
-    font-size: clamp(2rem, 7vw, 2.8rem);
-    font-weight: 600;
-    margin: 0 0 0.75rem;
+    font-size: clamp(2.8rem, 11vw, 4.2rem);   /* the math is the star during play */
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.9rem;
     text-align: center;
-  }
-  #score {
-    font-size: 1.1rem;
-    color: var(--dim);
     font-variant-numeric: tabular-nums;
-    margin-bottom: 2.5rem;
-    min-height: 1.4rem;   /* holds the space before first result, so nothing jumps */
   }
+  /* round feedback: a color flash — cyan when you take it, coral when they do */
+  #question.flash-you  { animation: flash-you 0.7s ease-out; }
+  #question.flash-them { animation: flash-them 0.7s ease-out; }
+  @keyframes flash-you  { from { color: var(--blue); } }
+  @keyframes flash-them { from { color: var(--red); } }
+
+  /* live-round pulse: motion says "clock's ticking" without faking a countdown */
+  #pulse {
+    width: min(300px, 70vw);
+    height: 6px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 0 1.6rem;
+    display: none;               /* shown while a round is live */
+  }
+  #pulse div {
+    width: 35%;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--blue);
+    animation: sweep 0.9s ease-in-out infinite alternate;  /* ping-pong: alive, not a divider */
+  }
+  @keyframes sweep {
+    from { transform: translateX(-30%); }
+    to   { transform: translateX(215%); }
+  }
+
+  /* first-to-5 as pips: read the standings in a glance, not a sentence */
+  #score {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    margin-bottom: 2.5rem;
+    min-height: 1.4rem;
+  }
+  .side {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .side-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--soft);
+  }
+  .side.you .side-label  { color: var(--blue); }
+  .side.them .side-label { color: var(--red); }
+  .pips { display: flex; gap: 0.32rem; }
+  .pip {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1.5px solid #4a5070;   /* empty ring bright enough to count at a glance */
+  }
+  .side.you .pip.filled  { background: var(--blue); border-color: var(--blue); }
+  .side.them .pip.filled { background: var(--red);  border-color: var(--red); }
+  .pip.filled { animation: pop 0.25s ease-out; }
+  @keyframes pop { from { transform: scale(0.3); } }
+  .vs {
+    font-size: 0.72rem;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+
+  #me-chip.cyan {
+    color: var(--blue);
+    border-color: rgba(0, 176, 255, 0.4);
+  }
+
+  /* your submit is YOUR color — cyan = me, everywhere */
+  #send {
+    background: var(--blue);
+  }
+  #send:hover { background: #33c1ff; }
+  #send:focus-visible { outline-color: var(--text); }
   #controls {
     display: flex;
     gap: 0.6rem;
@@ -337,9 +423,14 @@
     <button class="chip" id="leave">&#8592; leave</button>
   </div>
   <div id="question">waiting for opponent...</div>
-  <div id="score"></div>
+  <div id="pulse"><div></div></div>
+  <div id="score">
+    <div class="side you"><span class="side-label">you</span><div class="pips" id="my-pips"></div></div>
+    <span class="vs">vs</span>
+    <div class="side them"><div class="pips" id="their-pips"></div><span class="side-label">them</span></div>
+  </div>
   <div id="controls">
-    <input id="answer" type="number" placeholder="answer">
+    <input id="answer" type="number" inputmode="numeric" placeholder="answer">
     <button id="send">go</button>
   </div>
   <button id="again">back to lobby</button>
@@ -363,6 +454,7 @@ function joinRoom(room) {
     ws.onclose = () => {
         if (!leaving) {
             document.getElementById("question").textContent = "connection lost";
+            document.getElementById("pulse").style.display = "none";
             document.getElementById("again").style.display = "inline-block";
         }
     };
@@ -372,11 +464,16 @@ ws.onmessage = (e) => {
     console.log("got:", msg);
     if (msg.type === "question") {
         document.getElementById("question").textContent = msg.text;
+        document.getElementById("pulse").style.display = "block";   // round is live
+        document.getElementById("answer").focus();                   // hands on keys, every round
     }
     if (msg.type === "result") {
-        document.getElementById("score").textContent = "player1: " + msg.scores.player1 + " - player2: " + msg.scores.player2;
+        updateScore(msg.scores);
+        flashRound(msg.winner === me);
     }
     if(msg.type === "game_over") {
+        updateScore(msg.scores);
+        document.getElementById("pulse").style.display = "none";
         if (msg.winner === me) {
             document.getElementById("question").textContent = "you won the game!";
         } else {
@@ -386,11 +483,14 @@ ws.onmessage = (e) => {
     }
     if (msg.type === "opponent_left") {
         document.getElementById("question").textContent = "opponent left the game";
+        document.getElementById("pulse").style.display = "none";
         document.getElementById("again").style.display = "inline-block";
     }
     if (msg.type === "welcome") {
         me = msg.name;
-        document.getElementById("me-chip").textContent = "you are " + me;
+        const chip = document.getElementById("me-chip");
+        chip.textContent = "you’re cyan ▸";
+        chip.classList.add("cyan");
     }
 };
 
@@ -398,7 +498,36 @@ ws.onmessage = (e) => {
     document.getElementById("room-chip").textContent = "room: " + room;
     document.getElementById("lobby").style.display = "none";
     document.getElementById("game").style.display = "flex";
+    document.body.classList.add("playing");   // header steps aside
+    renderPips(document.getElementById("my-pips"), 0);
+    renderPips(document.getElementById("their-pips"), 0);
     document.getElementById("answer").focus();
+}
+
+// --- score pips: 5 per side, you=cyan, them=coral ---
+function renderPips(el, filled) {
+    let html = "";
+    for (let i = 0; i < 5; i++) {
+        html += '<span class="pip' + (i < filled ? ' filled' : '') + '"></span>';
+    }
+    el.innerHTML = html;
+}
+
+function updateScore(scores) {
+    let mine = 0, theirs = 0;
+    for (const name in scores) {
+        if (name === me) { mine = scores[name]; } else { theirs = scores[name]; }
+    }
+    renderPips(document.getElementById("my-pips"), mine);
+    renderPips(document.getElementById("their-pips"), theirs);
+}
+
+// --- round feedback: flash the question cyan (you scored) or coral (they did) ---
+function flashRound(iWon) {
+    const q = document.getElementById("question");
+    q.classList.remove("flash-you", "flash-them");
+    void q.offsetWidth;   // reflow trick: lets the same animation restart back-to-back
+    q.classList.add(iWon ? "flash-you" : "flash-them");
 }
 
 function createDuel() {
@@ -422,9 +551,15 @@ function leaveRoom() {
     ws = null;
     me = null;
     // reset the game screen to its factory state for next time
+    document.body.classList.remove("playing");   // full-size header returns for the lobby
     document.getElementById("question").textContent = "waiting for opponent...";
-    document.getElementById("score").textContent = "";
-    document.getElementById("me-chip").textContent = "connecting...";
+    document.getElementById("question").classList.remove("flash-you", "flash-them");
+    renderPips(document.getElementById("my-pips"), 0);
+    renderPips(document.getElementById("their-pips"), 0);
+    document.getElementById("pulse").style.display = "none";
+    const chip = document.getElementById("me-chip");
+    chip.textContent = "connecting...";
+    chip.classList.remove("cyan");
     document.getElementById("answer").value = "";
     document.getElementById("again").style.display = "none";
     // swap screens back

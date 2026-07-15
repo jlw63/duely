@@ -41,7 +41,7 @@ async def start_round(room_code):
     a = random.randint(1, 100)
     b = random.randint(1, 100)
     games[room_code]["answer"] = a + b
-    await manager.broadcast(room_code, {"type": "question", "text": f"What is {a} + {b}?"})
+    await manager.broadcast(room_code, {"type": "question", "text": f"{a} + {b}"})
 
 
 @app.websocket("/ws/{room_code}")
