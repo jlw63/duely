@@ -1,6 +1,8 @@
 <h1>Duely</h1>
 <div id="question">waiting for opponent...</div>
 
+<div id="score"></div>
+
 <input id="answer" type="number" placeholder="your answer">
 <button id="send">answer</button>
 
@@ -9,11 +11,20 @@
   const ws = new WebSocket("ws://localhost:8000/ws/DUEL");
 
 ws.onmessage = (e) => {
-  const msg = JSON.parse(e.data);
-  console.log("got:", msg);
-  if (msg.type === "question") {
-    document.getElementById("question").textContent = msg.text;
-  }
+    const msg = JSON.parse(e.data);
+    console.log("got:", msg);
+    if (msg.type === "question") {
+        document.getElementById("question").textContent = msg.text;
+    }
+    if (msg.type === "result") {
+        document.getElementById("question").textContent = msg.winner + " wins the game!";
+    }
+    if(msg.type === "game_over") {
+        document.getElementById("question").textContent = msg.text;
+    }
+    if (msg.type === "opponent_left") {
+        document.getElementById("question").textContent = "opponent left the game";
+    }
 };
 
 document.getElementById("send").onclick = () => {
