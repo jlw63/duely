@@ -1,15 +1,113 @@
-<h1>Duely</h1>
-<div id="question">waiting for opponent...</div>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2312131e'/><polygon points='20,30 47,50 20,70' fill='%2300c8ee'/><polygon points='80,30 53,50 80,70' fill='%23ff6259'/></svg>">
+<title>duely</title>
 
+<style>
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #12131e;
+    color: #f2f3f7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 12vh;
+    margin: 0;
+  }
+
+  /* --- brand header: triangles + wordmark, rebuilt in code --- */
+  #logo {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    user-select: none;
+  }
+  #logo svg {
+    width: 1.6rem;
+    height: 1.6rem;
+  }
+  #wordmark {
+    font-size: 3.2rem;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  #slogan {
+    color: #8b8fa8;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    margin: 0.75rem 0 3rem;
+  }
+
+  /* --- game --- */
+  #question {
+    font-size: 2.6rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+    text-align: center;
+  }
+  #score {
+    font-size: 1.1rem;
+    color: #8b8fa8;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 2.5rem;
+    min-height: 1.4rem;   /* holds the space before first result, so nothing jumps */
+  }
+
+  #controls {
+    display: flex;
+    gap: 0.6rem;
+  }
+  #answer {
+    font-size: 1.4rem;
+    padding: 0.55rem 0.8rem;
+    width: 8rem;
+    text-align: center;
+    background: #1c1e2e;
+    color: #f2f3f7;
+    border: 2px solid #2c2f45;
+    border-radius: 10px;
+  }
+  #answer:focus {
+    outline: none;
+    border-color: #00c8ee;
+  }
+  #send {
+    font-size: 1.2rem;
+    font-weight: 700;
+    padding: 0.55rem 1.4rem;
+    background: #ff6259;
+    color: #12131e;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  #send:hover {
+    background: #ff7b73;
+  }
+  #send:focus-visible {
+    outline: 2px solid #00c8ee;
+    outline-offset: 2px;
+  }
+</style>
+
+<div id="logo">
+  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,10 90,50 10,90" fill="#00c8ee"/></svg>
+  <div id="wordmark">duely</div>
+  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="90,10 10,50 90,90" fill="#ff6259"/></svg>
+</div>
+<p id="slogan">answer first. win the duel.</p>
+
+<div id="question">waiting for opponent...</div>
 <div id="score"></div>
 
-<input id="answer" type="number" placeholder="your answer">
-<button id="send">answer</button>
-
+<div id="controls">
+  <input id="answer" type="number" placeholder="answer">
+  <button id="send">go</button>
+</div>
 
 <script>
-    
-    const room = prompt("enter room code:") || "DUEL"; 
+
+    const room = prompt("enter room code:") || "DUEL";
 
     let proto = "ws:";
     if (location.protocol === "https:") {
@@ -42,10 +140,15 @@ ws.onmessage = (e) => {
     }
 };
 
-document.getElementById("send").onclick = () => {
+function sendAnswer() {
   const box = document.getElementById("answer");
   ws.send(JSON.stringify({ type: "answer", value: Number(box.value) }));
   box.value = "";   // empty the box for the next round
-};
+}
+
+document.getElementById("send").onclick = sendAnswer;
+document.getElementById("answer").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendAnswer();
+});
 
 </script>
