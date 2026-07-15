@@ -1,4 +1,5 @@
 import random
+import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -41,6 +42,7 @@ async def start_round(room_code):
     a = random.randint(1, 100)
     b = random.randint(1, 100)
     games[room_code]["answer"] = a + b
+    games[room_code]["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
     await manager.broadcast(room_code, {"type": "question", "text": f"{a} + {b}"})
 
 
@@ -49,7 +51,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
     await manager.connect(websocket, room_code)
 
     if room_code not in games:
-        games[room_code] = {"answer": None, "scores": {}, "players": {}}
+        games[room_code] = {"answer": None, "scores": {}, "players": {},
+                             "question_time": None, "fastest": None, "rematch_requests": set()}
 
     player_name = f"player{len(manager.rooms[room_code])}"
     games[room_code]["players"][websocket] = player_name
@@ -69,16 +72,41 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     and data.get("value") == games[room_code]["answer"]):
                 name = games[room_code]["players"][websocket]
                 games[room_code]["scores"][name] += 1
+
+                elapsed = time.monotonic() - games[room_code]["question_time"]
+                fastest = games[room_code]["fastest"]
+                if fastest is None or elapsed < fastest["time"]:
+                    games[room_code]["fastest"] = {"name": name, "time": round(elapsed, 2)}
+
                 await manager.broadcast(room_code, {"type": "result", "winner": name,
-                                                    "scores": games[room_code]["scores"]})
+                                                    "scores": games[room_code]["scores"],
+                                                    "time": round(elapsed, 2)})
                 #if player reached win_score, broadcast the result and no new round starts
                 if games[room_code]["scores"][name] >= WIN_SCORE:
                     await manager.broadcast(room_code, {"type": "game_over", "winner": name,
-                                                        "scores": games[room_code]["scores"]})
+                                                        "scores": games[room_code]["scores"],
+                                                        "fastest": games[room_code]["fastest"]})
                     games [room_code]["answer"] = None  # Reset the answer to None to indicate the game is over
                 else:
                     await start_round(room_code)
-                
+
+            if (data.get("type") == "rematch"
+                    and room_code in games):
+                name = games[room_code]["players"][websocket]
+                games[room_code]["rematch_requests"].add(name)
+                wanted = len(games[room_code]["rematch_requests"])
+                needed = len(games[room_code]["players"])   # both players in the room, whatever their names
+                if wanted >= needed:
+                    # everyone's in — reset the game and go again
+                    for p in games[room_code]["scores"]:
+                        games[room_code]["scores"][p] = 0
+                    games[room_code]["rematch_requests"] = set()
+                    games[room_code]["fastest"] = None
+                    await start_round(room_code)
+                else:
+                    # one side is waiting on the other
+                    await manager.broadcast(room_code, {"type": "rematch_pending", "name": name})
+
     except WebSocketDisconnect:
         manager.disconnect(websocket, room_code)
         if room_code in games:

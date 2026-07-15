@@ -1,0 +1,500 @@
+:root {
+    --ink: #12131e;
+    --panel: #1c1e2e;
+    --edge: #2c2f45;
+    --text: #f2f3f7;
+    --dim: #8b8fa8;
+    --soft: #aab0c8;     /* small text needs MORE contrast, not less */
+    --blue: #00b0ff;
+    --red: #ff5252;
+  }
+
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--ink);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;      /* hero sits at the visual center, not the top third */
+    min-height: 100vh;
+    padding: 2rem 1rem;
+    margin: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  /* --- ambient background triangles, drifting toward the face-off --- */
+  .bg-tri {
+    position: fixed;
+    top: 50%;
+    width: 42vh;
+    height: 60vh;
+    opacity: 0.09;
+    pointer-events: none;
+    z-index: -1;
+    transform: translateY(-50%);
+  }
+  .bg-tri.left  { left: -6vh;  animation: drift-l 6s ease-in-out infinite alternate; }
+  .bg-tri.right { right: -6vh; animation: drift-r 6s ease-in-out infinite alternate; }
+  @keyframes drift-l { to { transform: translateY(-50%) translateX(2.5vh); } }
+  @keyframes drift-r { to { transform: translateY(-50%) translateX(-2.5vh); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bg-tri.left, .bg-tri.right { animation: none; }
+    #logo svg { animation: none; }
+    #game { animation: none; }
+    #pulse div { animation: none; width: 100%; }
+    #question.flash-you, #question.flash-them { animation: none; }
+    .pip.filled { animation: none; }
+    #wait-anim svg, #wait-note { animation: none; }
+    button { transition: none; }
+  }
+
+  /* --- brand header --- */
+  #logo {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    user-select: none;
+  }
+  #logo svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  /* the face-off: arrows ease toward each other once, on load */
+  #logo svg:first-of-type { animation: enter-l 0.6s ease-out; }
+  #logo svg:last-of-type  { animation: enter-r 0.6s ease-out; }
+  @keyframes enter-l { from { transform: translateX(-14px); opacity: 0; } }
+  @keyframes enter-r { from { transform: translateX(14px);  opacity: 0; } }
+  #wordmark {
+    font-size: clamp(2.4rem, 8vw, 3.2rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    text-decoration: none;    /* the logo is never a link, never underlined */
+  }
+  #slogan {
+    color: var(--dim);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    margin: 0.8rem 0 0.6rem;
+    text-align: center;
+  }
+  #tagline {
+    color: #c9cee2;     /* a step below white — the logo stays the loudest thing */
+    font-size: 1.02rem;
+    font-weight: 500;   /* medium weight ties it to the display type instead of reading as default */
+    margin: 0 0 2.6rem;
+    text-align: center;
+  }
+
+  /* --- during play the brand steps aside; the math takes the stage --- */
+  body.playing #game { flex: 1; justify-content: center; }  /* game owns the whole viewport */
+  body.playing #logo {
+    position: fixed;              /* wordmark docks top-left, like a status bar */
+    top: 1rem;
+    left: 1.2rem;
+    z-index: 10;
+  }
+  body.playing #logo svg { width: 0.85rem; height: 0.85rem; }
+  body.playing #wordmark { font-size: 1.4rem; }
+  body.playing #meta {
+    position: fixed;              /* session chips dock top-right */
+    top: 1.1rem;
+    right: 1.2rem;
+    margin: 0;
+    z-index: 10;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  body.playing #slogan,
+  body.playing #tagline { display: none; }
+
+  /* --- screens: only one of #lobby / #game shows at a time --- */
+  #lobby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.1rem;
+  }
+  #create {
+    font-size: 1.35rem;
+    padding: 0.8rem 2.4rem;
+  }
+  .divider {
+    color: var(--soft);
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 0.2rem 0 0;
+  }
+
+  /* input + button fused into one pill group */
+  .pill-group {
+    display: flex;
+  }
+  .pill-group input {
+    border-radius: 10px 0 0 10px;
+    border-right: none;
+    width: 10rem;
+  }
+  .pill-group button {
+    border-radius: 0 10px 10px 0;
+    background: var(--blue);        /* join is the blue player's move; create is the red one's */
+    color: var(--ink);
+    border: 2px solid var(--blue);
+    border-left: none;
+    font-size: 1rem;
+  }
+  .pill-group button:hover { background: #33c1ff; }
+  .pill-group:focus-within input,
+  .pill-group:focus-within button { border-color: var(--blue); }
+
+  .trust {
+    color: var(--soft);
+    font-size: 0.8rem;
+    margin: -0.5rem 0 0.3rem;   /* snug under the create button — it de-risks that click */
+  }
+
+  /* --- mock round: proof of gameplay, no interaction --- */
+  #demo {
+    margin-top: 1.5rem;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    padding: 0.9rem 1.6rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .demo-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .demo-q {
+    font-size: 1.9rem;       /* the math is the fun part — second-loudest after the wordmark */
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .demo-row {
+    display: flex;
+    gap: 0.7rem;
+    font-size: 0.82rem;
+  }
+  .demo-p {
+    padding: 0.25rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid var(--edge);
+  }
+  .demo-p.win {
+    border-color: rgba(0, 176, 255, 0.55);
+    color: var(--blue);
+    font-weight: 600;
+  }
+  .demo-p.lose {
+    border-color: rgba(255, 82, 82, 0.4);   /* the duel is cyan vs coral, everywhere */
+    color: var(--red);
+  }
+
+  #game {
+    display: none;           /* JS flips this to flex on join */
+    flex-direction: column;
+    align-items: center;
+    animation: rise 0.35s ease-out;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* --- game screen --- */
+  #meta {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .chip {
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    padding: 0.3rem 0.9rem;
+  }
+  button.chip {          /* the leave control: chip-shaped, but clearly clickable */
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--red);
+    border-color: rgba(255, 82, 82, 0.4);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  button.chip:hover {
+    border-color: var(--red);
+    background: rgba(255, 82, 82, 0.1);
+  }
+  #again {
+    display: none;           /* appears when a game ends */
+    margin-top: 1.8rem;
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
+    font-size: 1rem;
+  }
+  #again:hover {
+    background: var(--panel);
+    border-color: var(--blue);
+  }
+  #postgame-status {
+    color: var(--soft);
+    font-size: 0.95rem;
+    margin: 0 0 1rem;
+    display: none;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+  }
+  #fastest {
+    color: var(--soft);
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+    display: none;
+    letter-spacing: 0.02em;
+  }
+  #postgame-actions {
+    display: none;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 0.4rem;
+  }
+  button.primary {
+    background: var(--blue);
+    color: var(--ink);
+  }
+  button.primary:hover { background: #33c1ff; }
+  button.secondary {
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
+  }
+  button.secondary:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: #4d5b8e;
+  }
+  #question {
+    font-size: clamp(2.8rem, 11vw, 4.2rem);   /* the math is the star during play */
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.9rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  /* round feedback: a color flash — cyan when you take it, coral when they do */
+  #question.flash-you  { animation: flash-you 0.7s ease-out; }
+  #question.flash-them { animation: flash-them 0.7s ease-out; }
+  @keyframes flash-you  { from { color: var(--blue); } }
+  @keyframes flash-them { from { color: var(--red); } }
+
+  /* live-round pulse: motion says "clock's ticking" without faking a countdown */
+  #pulse {
+    width: min(300px, 70vw);
+    height: 6px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 0 1.6rem;
+    display: none;               /* shown while a round is live */
+  }
+  #pulse div {
+    width: 35%;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--blue);
+    animation: sweep 0.9s ease-in-out infinite alternate;  /* ping-pong: alive, not a divider */
+  }
+  @keyframes sweep {
+    from { transform: translateX(-30%); }
+    to   { transform: translateX(215%); }
+  }
+
+  /* --- waiting room: the code is the hero; its job is getting shared --- */
+  #wait {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+  }
+  .wait-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--soft);
+  }
+  #invite-code {
+    font-size: clamp(2.8rem, 11vw, 4.2rem);
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1;
+  }
+  #copy { background: var(--blue); }
+  #copy:hover { background: #33c1ff; }
+  #wait-anim {
+    display: flex;
+    gap: 2.4rem;
+    margin-top: 1.4rem;
+  }
+  #wait-anim svg { width: 1.2rem; height: 1.2rem; }
+  #wait-anim svg:first-child { animation: seek-l 1.4s ease-in-out infinite alternate; }
+  #wait-anim svg:last-child  { animation: seek-r 1.4s ease-in-out infinite alternate; }
+  @keyframes seek-l { to { transform: translateX(1rem); } }
+  @keyframes seek-r { to { transform: translateX(-1rem); } }
+  #wait-note {
+    color: var(--soft);      /* it's the screen's status line — readable first, animated second */
+    font-size: 0.95rem;
+    margin: 0;
+    animation: breathe 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes breathe { from { opacity: 0.45; } to { opacity: 1; } }
+
+  /* first-to-5 as pips: read the standings in a glance, not a sentence */
+  #score {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    margin-bottom: 2.5rem;
+    min-height: 1.4rem;
+  }
+  .side {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .side-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--soft);
+  }
+  .side.you .side-label  { color: var(--blue); }
+  .side.them .side-label { color: var(--red); }
+  .pips { display: flex; gap: 0.32rem; }
+  .pip {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1.5px solid #4a5070;   /* empty ring bright enough to count at a glance */
+  }
+  .side.you .pip.filled  { background: var(--blue); border-color: var(--blue); }
+  .side.them .pip.filled { background: var(--red);  border-color: var(--red); }
+  .pip.filled { animation: pop 0.25s ease-out; }
+  @keyframes pop { from { transform: scale(0.3); } }
+  .vs {
+    font-size: 0.72rem;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+
+  #me-chip.cyan {
+    color: var(--blue);
+    border-color: rgba(0, 176, 255, 0.4);
+  }
+
+  /* your submit is YOUR color — cyan = me, everywhere */
+  #send {
+    background: var(--blue);
+  }
+  #send:hover { background: #33c1ff; }
+  #send:focus-visible { outline-color: var(--text); }
+  #controls {
+    display: flex;
+    gap: 0.6rem;
+  }
+
+  #question.winner { color: var(--blue); }
+  #question.loser { color: var(--red); }
+  #celebration {
+    position: relative;
+    width: min(320px, 75vw);
+    height: 42px;
+    margin-top: 1rem;
+    pointer-events: none;
+  }
+  #celebration span {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    opacity: 0;
+    transform: scale(0.35) rotate(25deg);
+    background: var(--blue);
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  }
+  #celebration span:nth-child(2),
+  #celebration span:nth-child(4) { background: var(--red); }
+  #celebration.show span {
+    animation: burst 0.9s ease-out forwards;
+  }
+  #celebration span:nth-child(1) { left: 8%; animation-delay: 0s; }
+  #celebration span:nth-child(2) { left: 28%; animation-delay: 0.05s; }
+  #celebration span:nth-child(3) { left: 48%; animation-delay: 0.1s; }
+  #celebration span:nth-child(4) { left: 68%; animation-delay: 0.15s; }
+  #celebration span:nth-child(5) { left: 84%; animation-delay: 0.18s; }
+  #celebration span:nth-child(6) { left: 52%; animation-delay: 0.22s; }
+  @keyframes burst {
+    0% { opacity: 0; transform: translateY(0) scale(0.35) rotate(25deg); }
+    20% { opacity: 1; transform: translateY(-12px) scale(0.85) rotate(25deg); }
+    100% { opacity: 0; transform: translateY(-28px) scale(0.45) rotate(25deg); }
+  }
+
+  /* --- shared input/button styling --- */
+  input {
+    font-size: 1.4rem;
+    font-family: inherit;
+    padding: 0.55rem 0.8rem;
+    width: 11rem;
+    text-align: center;
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
+    border-radius: 10px;
+    box-sizing: border-box;
+  }
+  input::placeholder {
+    color: var(--dim);
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+  }
+  #room { text-transform: uppercase; }
+  input:focus {
+    outline: none;
+    border-color: var(--blue);
+  }
+  #answer::-webkit-inner-spin-button,
+  #answer::-webkit-outer-spin-button { -webkit-appearance: none; }
+  #answer { -moz-appearance: textfield; appearance: textfield; }
+
+  button {
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-family: inherit;
+    padding: 0.55rem 1.4rem;
+    background: var(--red);
+    color: var(--ink);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.08s;
+  }
+  button:hover { background: #ff6b6b; }
+  button:active { transform: scale(0.96); }
+  button:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
