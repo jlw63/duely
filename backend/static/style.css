@@ -200,6 +200,23 @@
     text-transform: uppercase;
     padding: 0.4rem 0.9rem;
   }
+  /* difficulty chips get a second line showing the actual number range —
+     "medium" alone doesn't tell you anything until you've already picked it */
+  .diff-opt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.45rem 0.9rem 0.4rem;
+  }
+  .diff-range {
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--dim);
+  }
+  .diff-opt.active .diff-range { color: rgba(0, 176, 255, 0.75); }
   /* symbols, not words — a fixed circle keeps +, ×, % all reading as equal-weight peers */
   .op-opt {
     width: 2.2rem;

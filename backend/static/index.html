@@ -31,9 +31,10 @@
 <!-- screen 1: the lobby -->
 <div id="lobby">
   <div id="difficulty" role="radiogroup" aria-label="difficulty">
-    <button class="diff-opt" data-difficulty="easy" role="radio" aria-checked="false">easy</button>
-    <button class="diff-opt active" data-difficulty="medium" role="radio" aria-checked="true">medium</button>
-    <button class="diff-opt" data-difficulty="hard" role="radio" aria-checked="false">hard</button>
+    <!-- ranges here must match NUMBER_RANGE in main.py — this is display copy, not logic, so it can't enforce itself -->
+    <button class="diff-opt" data-difficulty="easy" role="radio" aria-checked="false">easy<span class="diff-range">1&ndash;20</span></button>
+    <button class="diff-opt active" data-difficulty="medium" role="radio" aria-checked="true">medium<span class="diff-range">1&ndash;100</span></button>
+    <button class="diff-opt" data-difficulty="hard" role="radio" aria-checked="false">hard<span class="diff-range">1&ndash;300</span></button>
   </div>
   <div id="target-picker" role="radiogroup" aria-label="first to how many points">
     <button class="target-opt" data-target="3" role="radio" aria-checked="false">first to 3</button>
