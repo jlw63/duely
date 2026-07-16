@@ -95,9 +95,9 @@ function resolveSubmissionWatch(iWonThisRound) {
     if (!iWonThisRound) { shakeWrong(); }
 }
 
-function shakeWrong() {
+function shakeWrong(elementId) {
     playWrong();
-    const box = document.getElementById("answer");
+    const box = document.getElementById(elementId || "answer");   // defaults to the answer box (its original use)
     box.classList.add("wrong");        // red border — stays until the player tries again
     box.classList.remove("shake");
     void box.offsetWidth;               // reflow trick: lets the shake replay on back-to-back misses
@@ -122,19 +122,20 @@ function showLobbyError(text) {
     err.classList.add("show");
 }
 
-function joinRoom(room, difficulty, target) {
+function joinRoom(room, difficulty, target, ops) {
     document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
     }
     leaving = false;
-    // difficulty/target only matter to whoever CREATES the room — the server
+    // difficulty/target/ops only matter to whoever CREATES the room — the server
     // stores them once and every later joiner (typed code, invite link) just inherits them
     let url = proto + "//" + location.host + "/ws/" + room;
     const params = [];
     if (difficulty) { params.push("difficulty=" + difficulty); }
     if (target) { params.push("target=" + target); }
+    if (ops) { params.push("ops=" + ops); }
     if (params.length) { url += "?" + params.join("&"); }
     ws = new WebSocket(url);
 
@@ -290,6 +291,7 @@ function flashRound(iWon) {
 
 let selectedDifficulty = "medium";
 let selectedTarget = "5";
+let selectedOps = ["add", "sub"];   // multi-select — matches the server's own default
 
 function createDuel() {
     // mint a shareable 4-letter code; the backend accepts any room string
@@ -298,11 +300,22 @@ function createDuel() {
     for (let i = 0; i < 4; i++) {
         code += letters[Math.floor(Math.random() * letters.length)];
     }
-    joinRoom(code, selectedDifficulty, selectedTarget);
+    joinRoom(code, selectedDifficulty, selectedTarget, selectedOps.join(","));
 }
 
 function joinTyped() {
-    const room = document.getElementById("room").value.trim().toUpperCase() || "DUEL";
+    const room = document.getElementById("room").value.trim().toUpperCase();
+    if (!room) {
+        // no silent fallback room — an empty box used to default to "DUEL" for
+        // everyone, which is exactly the "strangers collide" problem the
+        // room-full guard exists to catch, just walking in the front door instead.
+        // Same shake+red treatment as a missed answer — one visual language for
+        // "you need to actually enter something here" everywhere in the app.
+        shakeWrong("room");
+        document.getElementById("join").classList.add("wrong");   // the whole control flags red, not just the box
+        document.getElementById("room").focus();
+        return;
+    }
     joinRoom(room);
 }
 
@@ -389,8 +402,33 @@ document.querySelectorAll(".target-opt").forEach((btn) => {
         });
     };
 });
+
+// multi-select: each chip toggles independently, but at least one operator
+// must always stay on — a match with nothing selected has no questions to ask
+document.querySelectorAll(".op-opt").forEach((btn) => {
+    btn.onclick = () => {
+        const op = btn.dataset.op;
+        const isActive = btn.classList.contains("active");
+        if (isActive && selectedOps.length === 1) { return; }   // refuse to drop the last one
+        if (isActive) {
+            selectedOps = selectedOps.filter((o) => o !== op);
+        } else {
+            selectedOps.push(op);
+        }
+        btn.classList.toggle("active", !isActive);
+        btn.setAttribute("aria-checked", (!isActive).toString());
+    };
+});
 document.getElementById("room").addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinTyped();
+});
+document.getElementById("room").addEventListener("animationend", (e) => {
+  if (e.animationName === "shake-wrong") { e.target.classList.remove("shake"); }
+});
+document.getElementById("room").addEventListener("input", () => {
+  document.getElementById("room").classList.remove("wrong");
+  document.getElementById("join").classList.remove("wrong");
+  document.getElementById("lobby-error").classList.remove("show");   // still used by the room-full server response
 });
 
 document.getElementById("send").onclick = sendAnswer;
