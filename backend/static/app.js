@@ -398,11 +398,21 @@ function soloGenQuestion(difficulty, ops) {
     return SOLO_OPERATIONS[op](difficulty);
 }
 
+// --- the "ghost timer": a single continuously-draining time BANK, not a
+// per-question countdown. It keeps running underneath every question in the
+// run; a correct answer tops it up (a reward), capped so bonuses can't
+// stockpile forever. This is what makes it feel like a personal-best chase
+// ("how far can you push before the clock catches you") instead of a
+// pass/fail wall each round — there's no human opponent to be fair to here,
+// so the pressure comes entirely from this one resource running out. ---
+const SOLO_BASE_TIME = 13;    // starting bank
+const SOLO_BONUS = 3;         // added to the bank per correct answer
+const SOLO_MAX_BANK = 13;     // hard cap — the bar's "full" reading
+
 // --- solo state machine: intro -> play -> result, same "screens" pattern as lobby/game ---
 let soloCorrectAnswer = null;
 let soloStreak = 0;
-let soloTimeLimit = 6.0;      // seconds allowed for the CURRENT question — shrinks every correct answer
-let soloTimeLeft = 0;
+let soloTimeBank = SOLO_BASE_TIME;
 let soloTimerHandle = null;   // requestAnimationFrame id, so leaving mid-run can cancel it cleanly
 let soloLastTick = 0;
 
@@ -429,9 +439,10 @@ function leaveSolo() {
 
 function startSolo() {
     soloStreak = 0;
-    soloTimeLimit = 6.0;
+    soloTimeBank = SOLO_BASE_TIME;
     setSoloState("play");
     document.getElementById("solo-answer").value = "";
+    startSoloTimer();      // ONE continuous clock for the whole run — never reset per question
     soloNextQuestion();
 }
 
@@ -440,18 +451,26 @@ function soloNextQuestion() {
     soloCorrectAnswer = q.answer;
     document.getElementById("solo-question").textContent = q.text;
     document.getElementById("solo-question").classList.remove("flash-you", "flash-them");
-    document.getElementById("solo-streak").innerHTML = "streak: <strong>" + soloStreak + "</strong>";
     document.getElementById("solo-answer").classList.remove("wrong", "shake");
     document.getElementById("solo-answer").focus();
-    startSoloTimer();
+    updateSoloStreakDisplay();
+    // deliberately no timer touch here — the bank keeps draining seamlessly across questions
+}
+
+// "current run: N correct · best: M" — the retention hook that replaces the
+// multiplayer scoreboard. Flips to "new best!" live, the moment this run overtakes it.
+function updateSoloStreakDisplay() {
+    const best = loadStats().soloBest;
+    const bestText = soloStreak > best ? "new best!" : ("best: " + best);
+    document.getElementById("solo-streak").innerHTML =
+        "current run: <strong>" + soloStreak + "</strong> correct &middot; " + bestText;
 }
 
 function startSoloTimer() {
-    soloTimeLeft = soloTimeLimit;
     soloLastTick = performance.now();
     const bar = document.querySelector("#solo-pulse div");
     bar.classList.remove("low");
-    bar.style.width = "100%";
+    bar.style.width = ((soloTimeBank / SOLO_MAX_BANK) * 100) + "%";
     stopSoloTimer();   // clear any previous loop before starting a fresh one
     soloTimerHandle = requestAnimationFrame(soloTick);
 }
@@ -463,12 +482,12 @@ function stopSoloTimer() {
 function soloTick(now) {
     const elapsed = (now - soloLastTick) / 1000;
     soloLastTick = now;
-    soloTimeLeft -= elapsed;
+    soloTimeBank -= elapsed;
     const bar = document.querySelector("#solo-pulse div");
-    const pct = Math.max(0, (soloTimeLeft / soloTimeLimit) * 100);
+    const pct = Math.max(0, (soloTimeBank / SOLO_MAX_BANK) * 100);
     bar.style.width = pct + "%";
     bar.classList.toggle("low", pct < 25);   // the last stretch turns the bar red — real urgency, not decoration
-    if (soloTimeLeft <= 0) {
+    if (soloTimeBank <= 0) {
         stopSoloTimer();
         soloFlashMiss();
         setTimeout(endSoloRun, 400);   // let the coral flash register before the screen changes
@@ -491,19 +510,20 @@ function submitSoloAnswer() {
     const value = Number(box.value);
     box.value = "";
     if (value === soloCorrectAnswer) {
-        stopSoloTimer();
         soloStreak += 1;
+        soloTimeBank = Math.min(SOLO_MAX_BANK, soloTimeBank + SOLO_BONUS);   // the reward: top up the bank, capped
         playCorrect();
         const q = document.getElementById("solo-question");
         q.classList.remove("flash-you", "flash-them");
         void q.offsetWidth;
         q.classList.add("flash-you");
-        soloTimeLimit = Math.max(1.8, soloTimeLimit * 0.93);   // the ghost tightens its grip each round
-        setTimeout(soloNextQuestion, 250);   // a beat to see the flash before the next question replaces it
+        setTimeout(soloNextQuestion, 250);   // the clock keeps draining underneath this brief pause — no reset
     } else {
-        stopSoloTimer();
-        soloFlashMiss();
-        setTimeout(endSoloRun, 400);
+        // a wrong guess has no run-ending penalty — the time bank hitting zero
+        // (see soloTick) is the ONLY way a run ends. This is just visual
+        // feedback so a miss doesn't pass by silently: shake + red border,
+        // same language as the multiplayer answer box, but no consequence.
+        shakeWrong("solo-answer");
     }
 }
 
@@ -515,6 +535,7 @@ function endSoloRun() {
         ? "new best! <strong>" + soloStreak + "</strong> in a row"
         : soloStreak + " in a row — best is " + loadStats().soloBest;
     setSoloState("result");
+    document.getElementById("solo-actions").style.display = "flex";   // shares display:none with #postgame-actions — must be revealed explicitly
 }
 
 function createDuel() {
@@ -609,6 +630,9 @@ document.getElementById("solo-answer").addEventListener("keydown", (e) => {
 });
 document.getElementById("solo-answer").addEventListener("animationend", (e) => {
     if (e.animationName === "shake-wrong") { e.target.classList.remove("shake"); }
+});
+document.getElementById("solo-answer").addEventListener("input", () => {
+    document.getElementById("solo-answer").classList.remove("wrong");
 });
 
 renderStatsStrip();   // show existing stats immediately on page load, if any

@@ -95,7 +95,7 @@
     #result-row { transition: none; }
     .result-tri { transition: none; }
     body.match-over #question { animation: none; }
-    #answer.shake, #room.shake { animation: none; }   /* red border still shows — just no physical shake */
+    #answer.shake, #room.shake, #solo-answer.shake { animation: none; }   /* red border still shows — just no physical shake */
     button { transition: none; }
   }
 
@@ -707,13 +707,13 @@
   /* --- missed submission: red border persists until the next attempt,
      a one-shot shake plays once and removes itself via animationend --- */
   /* shared "you need to enter something here" language — the answer box on a
-     miss, the room box on an empty join attempt */
-  #answer.wrong, #room.wrong,
-  #answer.wrong:focus, #room.wrong:focus {   /* :focus needs matching to win — the box is almost always
+     miss, the room box on an empty join attempt, the solo box on a wrong guess */
+  #answer.wrong, #room.wrong, #solo-answer.wrong,
+  #answer.wrong:focus, #room.wrong:focus, #solo-answer.wrong:focus {   /* :focus needs matching to win — the box is almost always
                               still focused the instant this fires, right after Enter/click */
     border-color: var(--red);
   }
-  #answer.shake, #room.shake { animation: shake-wrong 0.4s ease; }
+  #answer.shake, #room.shake, #solo-answer.shake { animation: shake-wrong 0.4s ease; }
   @keyframes shake-wrong {
     0%, 100% { transform: translateX(0); }
     20% { transform: translateX(-8px); }
