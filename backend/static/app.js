@@ -14,6 +14,49 @@ function updateSoundToggle() {
     btn.setAttribute("aria-label", soundOn ? "mute sound" : "unmute sound");
 }
 
+// --- session stats: local only, no accounts, one JSON blob in localStorage ---
+function loadStats() {
+    try {
+        const saved = JSON.parse(localStorage.getItem("duely-stats"));
+        return saved || { gamesPlayed: 0, wins: 0, soloBest: 0 };
+    } catch (e) {
+        return { gamesPlayed: 0, wins: 0, soloBest: 0 };   // corrupted storage — start clean rather than crash
+    }
+}
+function saveStats(stats) {
+    localStorage.setItem("duely-stats", JSON.stringify(stats));
+}
+function recordMultiplayerResult(won) {
+    const stats = loadStats();
+    stats.gamesPlayed += 1;
+    if (won) { stats.wins += 1; }
+    saveStats(stats);
+    renderStatsStrip();
+}
+function recordSoloResult(streak) {
+    const stats = loadStats();
+    const isNewBest = streak > stats.soloBest;
+    if (isNewBest) { stats.soloBest = streak; }
+    saveStats(stats);
+    renderStatsStrip();
+    renderSoloBestChip();
+    return isNewBest;
+}
+function renderStatsStrip() {
+    const stats = loadStats();
+    const strip = document.getElementById("stats-strip");
+    if (stats.gamesPlayed === 0) { strip.classList.remove("show"); return; }   // nothing to say to a new visitor yet
+    const winRate = Math.round((stats.wins / stats.gamesPlayed) * 100);
+    strip.textContent = stats.gamesPlayed + (stats.gamesPlayed === 1 ? " duel played" : " duels played")
+        + " · " + winRate + "% win rate";
+    strip.classList.add("show");
+}
+function renderSoloBestChip() {
+    const stats = loadStats();
+    document.getElementById("solo-best-chip").textContent =
+        stats.soloBest > 0 ? "best streak: " + stats.soloBest : "no runs yet";
+}
+
 let audioCtx = null;
 function getAudioCtx() {
     // browsers block audio until a user gesture has happened (autoplay policy) —
@@ -187,6 +230,7 @@ ws.onmessage = (e) => {
         document.getElementById("final-score").style.display = "flex"; // ...for a score that reads across the room
         const won = msg.winner === me;
         document.body.classList.add("match-over", won ? "won" : "lost");
+        recordMultiplayerResult(won);
         if (won) {
             document.getElementById("question").textContent = "you won the duel!";
             document.getElementById("question").classList.add("winner");
@@ -293,6 +337,186 @@ let selectedDifficulty = "medium";
 let selectedTarget = "5";
 let selectedOps = ["add", "sub"];   // multi-select — matches the server's own default
 
+// ============================================================
+// SOLO PRACTICE — a "ghost timer" instead of an opponent. Runs
+// entirely client-side: no second player to keep honest against,
+// so no server round-trip needed, and it works even if the
+// backend is asleep. Reuses the SAME difficulty/ops the player
+// already picked in the lobby.
+//
+// Trade-off worth knowing: this means the question generator
+// below is a hand-written JS MIRROR of gen_question() in main.py.
+// They are two separate sources of truth — if you change the
+// ranges or add an operator on one side, change the other too.
+// ============================================================
+
+const SOLO_NUMBER_RANGE = { easy: [1, 20], medium: [1, 100], hard: [1, 300] };
+const SOLO_FACTOR_RANGE = { easy: [2, 6],  medium: [2, 12],  hard: [2, 20] };
+
+function soloRandInt(lo, hi) {
+    return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+}
+
+function soloGenAdd(difficulty) {
+    const [lo, hi] = SOLO_NUMBER_RANGE[difficulty] || SOLO_NUMBER_RANGE.medium;
+    const a = soloRandInt(lo, hi), b = soloRandInt(lo, hi);
+    return { text: a + " + " + b, answer: a + b };
+}
+function soloGenSubtract(difficulty) {
+    const [lo, hi] = SOLO_NUMBER_RANGE[difficulty] || SOLO_NUMBER_RANGE.medium;
+    let a = soloRandInt(lo, hi), b = soloRandInt(lo, hi);
+    if (b > a) { const t = a; a = b; b = t; }   // keep it non-negative, same as the server's version
+    return { text: a + " - " + b, answer: a - b };
+}
+function soloGenMultiply(difficulty) {
+    const [lo, hi] = SOLO_FACTOR_RANGE[difficulty] || SOLO_FACTOR_RANGE.medium;
+    const a = soloRandInt(lo, hi), b = soloRandInt(lo, hi);
+    return { text: a + " × " + b, answer: a * b };
+}
+function soloGenDivide(difficulty) {
+    // built backwards from the answer, exactly like the server does — always exact, never a fraction
+    const [lo, hi] = SOLO_FACTOR_RANGE[difficulty] || SOLO_FACTOR_RANGE.medium;
+    const divisor = soloRandInt(lo, hi), answer = soloRandInt(lo, hi);
+    return { text: (divisor * answer) + " ÷ " + divisor, answer: answer };
+}
+function soloGenModulo(difficulty) {
+    const [lo, hi] = SOLO_NUMBER_RANGE[difficulty] || SOLO_NUMBER_RANGE.medium;
+    const [dlo, dhi] = SOLO_FACTOR_RANGE[difficulty] || SOLO_FACTOR_RANGE.medium;
+    const dividend = soloRandInt(lo, hi);
+    const divisor = soloRandInt(Math.max(2, dlo), dhi);   // divisor of 1 is a trivial always-zero remainder
+    return { text: dividend + " % " + divisor, answer: dividend % divisor };
+}
+
+const SOLO_OPERATIONS = {
+    add: soloGenAdd, sub: soloGenSubtract, mul: soloGenMultiply, div: soloGenDivide, mod: soloGenModulo,
+};
+
+function soloGenQuestion(difficulty, ops) {
+    const validOps = ops.filter((op) => op in SOLO_OPERATIONS);
+    const list = validOps.length ? validOps : ["add", "sub"];   // never trust selectedOps blindly either
+    const op = list[Math.floor(Math.random() * list.length)];
+    return SOLO_OPERATIONS[op](difficulty);
+}
+
+// --- solo state machine: intro -> play -> result, same "screens" pattern as lobby/game ---
+let soloCorrectAnswer = null;
+let soloStreak = 0;
+let soloTimeLimit = 6.0;      // seconds allowed for the CURRENT question — shrinks every correct answer
+let soloTimeLeft = 0;
+let soloTimerHandle = null;   // requestAnimationFrame id, so leaving mid-run can cancel it cleanly
+let soloLastTick = 0;
+
+function setSoloState(state) {
+    document.getElementById("solo-intro").style.display = state === "intro" ? "flex" : "none";
+    document.getElementById("solo-play").style.display = state === "play" ? "flex" : "none";
+    document.getElementById("solo-result").style.display = state === "result" ? "flex" : "none";
+}
+
+function enterSolo() {
+    document.getElementById("lobby").style.display = "none";
+    document.getElementById("solo").style.display = "flex";
+    document.body.classList.add("playing");   // same compact-header treatment as multiplayer
+    renderSoloBestChip();
+    setSoloState("intro");
+}
+
+function leaveSolo() {
+    stopSoloTimer();
+    document.body.classList.remove("playing");
+    document.getElementById("solo").style.display = "none";
+    document.getElementById("lobby").style.display = "flex";
+}
+
+function startSolo() {
+    soloStreak = 0;
+    soloTimeLimit = 6.0;
+    setSoloState("play");
+    document.getElementById("solo-answer").value = "";
+    soloNextQuestion();
+}
+
+function soloNextQuestion() {
+    const q = soloGenQuestion(selectedDifficulty, selectedOps);
+    soloCorrectAnswer = q.answer;
+    document.getElementById("solo-question").textContent = q.text;
+    document.getElementById("solo-question").classList.remove("flash-you", "flash-them");
+    document.getElementById("solo-streak").innerHTML = "streak: <strong>" + soloStreak + "</strong>";
+    document.getElementById("solo-answer").classList.remove("wrong", "shake");
+    document.getElementById("solo-answer").focus();
+    startSoloTimer();
+}
+
+function startSoloTimer() {
+    soloTimeLeft = soloTimeLimit;
+    soloLastTick = performance.now();
+    const bar = document.querySelector("#solo-pulse div");
+    bar.classList.remove("low");
+    bar.style.width = "100%";
+    stopSoloTimer();   // clear any previous loop before starting a fresh one
+    soloTimerHandle = requestAnimationFrame(soloTick);
+}
+
+function stopSoloTimer() {
+    if (soloTimerHandle) { cancelAnimationFrame(soloTimerHandle); soloTimerHandle = null; }
+}
+
+function soloTick(now) {
+    const elapsed = (now - soloLastTick) / 1000;
+    soloLastTick = now;
+    soloTimeLeft -= elapsed;
+    const bar = document.querySelector("#solo-pulse div");
+    const pct = Math.max(0, (soloTimeLeft / soloTimeLimit) * 100);
+    bar.style.width = pct + "%";
+    bar.classList.toggle("low", pct < 25);   // the last stretch turns the bar red — real urgency, not decoration
+    if (soloTimeLeft <= 0) {
+        stopSoloTimer();
+        soloFlashMiss();
+        setTimeout(endSoloRun, 400);   // let the coral flash register before the screen changes
+        return;
+    }
+    soloTimerHandle = requestAnimationFrame(soloTick);
+}
+
+function soloFlashMiss() {
+    playMiss();
+    const q = document.getElementById("solo-question");
+    q.classList.remove("flash-you", "flash-them");
+    void q.offsetWidth;
+    q.classList.add("flash-them");
+}
+
+function submitSoloAnswer() {
+    const box = document.getElementById("solo-answer");
+    if (box.value.trim() === "") return;
+    const value = Number(box.value);
+    box.value = "";
+    if (value === soloCorrectAnswer) {
+        stopSoloTimer();
+        soloStreak += 1;
+        playCorrect();
+        const q = document.getElementById("solo-question");
+        q.classList.remove("flash-you", "flash-them");
+        void q.offsetWidth;
+        q.classList.add("flash-you");
+        soloTimeLimit = Math.max(1.8, soloTimeLimit * 0.93);   // the ghost tightens its grip each round
+        setTimeout(soloNextQuestion, 250);   // a beat to see the flash before the next question replaces it
+    } else {
+        stopSoloTimer();
+        soloFlashMiss();
+        setTimeout(endSoloRun, 400);
+    }
+}
+
+function endSoloRun() {
+    stopSoloTimer();
+    const isNewBest = recordSoloResult(soloStreak);
+    document.getElementById("solo-final").textContent = soloStreak;
+    document.getElementById("solo-final-note").innerHTML = isNewBest
+        ? "new best! <strong>" + soloStreak + "</strong> in a row"
+        : soloStreak + " in a row — best is " + loadStats().soloBest;
+    setSoloState("result");
+}
+
 function createDuel() {
     // mint a shareable 4-letter code; the backend accepts any room string
     const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // no I/O — they read as 1/0
@@ -373,6 +597,21 @@ document.getElementById("rematch").onclick = () => {
 };
 document.getElementById("create").onclick = createDuel;
 document.getElementById("join").onclick = joinTyped;
+
+document.getElementById("solo-link").onclick = enterSolo;
+document.getElementById("solo-leave").onclick = leaveSolo;
+document.getElementById("solo-back").onclick = leaveSolo;
+document.getElementById("solo-start").onclick = startSolo;
+document.getElementById("solo-retry").onclick = startSolo;
+document.getElementById("solo-send").onclick = submitSoloAnswer;
+document.getElementById("solo-answer").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitSoloAnswer();
+});
+document.getElementById("solo-answer").addEventListener("animationend", (e) => {
+    if (e.animationName === "shake-wrong") { e.target.classList.remove("shake"); }
+});
+
+renderStatsStrip();   // show existing stats immediately on page load, if any
 
 document.getElementById("sound-toggle").onclick = () => {
     soundOn = !soundOn;

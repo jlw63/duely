@@ -138,8 +138,10 @@
     text-align: center;
   }
 
-  /* --- during play the brand steps aside; the math takes the stage --- */
-  body.playing #game { flex: 1; justify-content: center; }  /* game owns the whole viewport */
+  /* --- during play the brand steps aside; the math takes the stage.
+     "playing" and its layout rules are shared by multiplayer (#game) and
+     solo (#solo) — same viewport-owning, same docked corner header. --- */
+  body.playing #game, body.playing #solo { flex: 1; justify-content: center; }
   /* optical centering: true geometric center reads as slightly too low, so
      shrinking the space below (not the space above) nudges the block up */
   body.match-over #game { padding-bottom: calc(6vh + 3rem); }
@@ -151,7 +153,8 @@
   }
   body.playing #logo svg { width: 0.85rem; height: 0.85rem; }
   body.playing #wordmark { font-size: 1.4rem; }
-  body.playing #meta {
+  body.playing #meta,
+  body.playing #solo-meta {
     position: fixed;              /* session chips dock top-right */
     top: 1.1rem;
     right: 1.2rem;
@@ -332,8 +335,8 @@
     color: var(--red);
   }
 
-  #game {
-    display: none;           /* JS flips this to flex on join */
+  #game, #solo {
+    display: none;           /* JS flips this to flex on join / on solo start */
     flex-direction: column;
     align-items: center;
     animation: rise 0.35s ease-out;
@@ -344,7 +347,7 @@
   }
 
   /* --- game screen --- */
-  #meta {
+  #meta, #solo-meta {
     display: flex;
     gap: 0.5rem;
     margin-bottom: 2rem;
@@ -416,25 +419,26 @@
   #fastest .stat-value.you  { color: var(--blue); }
   #fastest .stat-value.them { color: var(--red); }
 
-  #postgame-actions {
+  #postgame-actions, #solo-actions {
     display: none;
     align-items: center;    /* both buttons share one true baseline, not flex's implicit stretch */
     gap: 1rem;
     flex-wrap: wrap;
     justify-content: center;
-    margin-top: 3.2rem;      /* unmistakably the biggest gap — buttons read as their own "what next" zone */
+    margin-top: 2.2rem;
   }
   /* rematch and back-to-lobby are true peers: identical box, identical border
      width — only fill/color differs. (Different border widths were the bug:
      an unbordered filled button next to a 2px-bordered ghost button never
      line up on the same height.) */
-  #postgame-actions button {
+  #postgame-actions button, #solo-actions button {
     font-size: 1.1rem;
     padding: 0.75rem 2rem;
     min-width: 9.5rem;
     border-width: 2px;
     border-style: solid;
   }
+  #postgame-actions { margin-top: 3.2rem; }   /* unmistakably the biggest gap — buttons read as their own "what next" zone */
   button.primary {
     background: var(--blue);
     border-color: var(--blue);
@@ -473,7 +477,7 @@
   #tri-left polygon  { fill: var(--blue); }
   #tri-right polygon { fill: var(--red); }
 
-  #question {
+  #question, #solo-question {
     font-size: clamp(2.8rem, 11vw, 4.2rem);   /* the math is the star during play */
     font-weight: 800;
     letter-spacing: -0.01em;
@@ -510,9 +514,10 @@
     font-weight: 400;
     font-size: 0.45em;   /* a mark between two numbers, not a number-sized minus sign */
   }
-  /* round feedback: a color flash — cyan when you take it, coral when they do */
-  #question.flash-you  { animation: flash-you 0.7s ease-out; }
-  #question.flash-them { animation: flash-them 0.7s ease-out; }
+  /* round feedback: a color flash — cyan when you take it, coral when they do
+     (in solo: cyan for correct, coral for a miss — same visual language) */
+  #question.flash-you, #solo-question.flash-you   { animation: flash-you 0.7s ease-out; }
+  #question.flash-them, #solo-question.flash-them { animation: flash-them 0.7s ease-out; }
   @keyframes flash-you  { from { color: var(--blue); } }
   @keyframes flash-them { from { color: var(--red); } }
 
@@ -629,9 +634,10 @@
   #send {
     background: var(--blue);
   }
-  #send:hover { background: #33c1ff; }
-  #send:focus-visible { outline-color: var(--text); }
-  #controls {
+  #send:hover, #solo-send:hover { background: #33c1ff; }
+  #send:focus-visible, #solo-send:focus-visible { outline-color: var(--text); }
+  #solo-send { background: var(--blue); }
+  #controls, #solo-controls {
     display: flex;
     gap: 0.6rem;
   }
@@ -694,9 +700,9 @@
     outline: none;
     border-color: var(--blue);
   }
-  #answer::-webkit-inner-spin-button,
-  #answer::-webkit-outer-spin-button { -webkit-appearance: none; }
-  #answer { -moz-appearance: textfield; appearance: textfield; }
+  #answer::-webkit-inner-spin-button, #solo-answer::-webkit-inner-spin-button,
+  #answer::-webkit-outer-spin-button, #solo-answer::-webkit-outer-spin-button { -webkit-appearance: none; }
+  #answer, #solo-answer { -moz-appearance: textfield; appearance: textfield; }
 
   /* --- missed submission: red border persists until the next attempt,
      a one-shot shake plays once and removes itself via animationend --- */
@@ -734,3 +740,100 @@
     outline: 2px solid var(--blue);
     outline-offset: 2px;
   }
+
+  /* --- solo practice: one screen, three sub-states (intro / play / result),
+     only one visible at a time — same "screens" pattern as lobby vs game --- */
+  #solo-intro, #solo-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  #solo-play {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+  }
+  #solo-intro-title {
+    font-size: clamp(2.2rem, 8vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0.2rem 0 0;
+  }
+  #solo-intro-note {
+    color: var(--soft);
+    font-size: 0.95rem;
+    margin: 0 0 0.6rem;
+    text-align: center;
+  }
+  #solo-start { margin-top: 0.4rem; }
+
+  /* a REAL countdown, unlike the multiplayer pulse bar's honest ping-pong —
+     solo has no opponent to protect the illusion for, so the width IS the truth */
+  #solo-pulse {
+    width: min(300px, 70vw);
+    height: 6px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 0 1.6rem;
+  }
+  #solo-pulse div {
+    width: 100%;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--blue);
+    transition: width 0.1s linear, background 0.3s ease;
+  }
+  #solo-pulse div.low { background: var(--red); }   /* the last stretch turns urgent */
+  @media (prefers-reduced-motion: reduce) {
+    #solo-pulse div { transition: background 0.3s ease; }
+  }
+
+  #solo-streak {
+    font-size: 1.1rem;
+    color: var(--soft);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 2.2rem;
+  }
+  #solo-streak strong { color: var(--blue); font-weight: 800; }
+
+  #solo-final {
+    font-size: clamp(2.6rem, 10vw, 3.6rem);
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 0.3rem;
+  }
+  #solo-final-note {
+    color: var(--soft);
+    font-size: 0.95rem;
+    margin: 0 0 0.4rem;
+  }
+  #solo-final-note strong { color: var(--blue); }
+
+  /* --- the lobby's entry into solo mode: quiet, secondary to "create a duel" --- */
+  #solo-link {
+    background: none;
+    border: none;
+    color: var(--soft);
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 0.3rem 0.5rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(170, 176, 200, 0.4);
+  }
+  #solo-link:hover { color: var(--text); background: none; }
+  #solo-link:active { transform: none; }
+
+  /* --- session stats: quiet, and invisible until there's something to show --- */
+  #stats-strip {
+    display: none;
+    color: var(--dim);
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+    margin: 0.2rem 0 0;
+    text-align: center;
+  }
+  #stats-strip.show { display: block; }

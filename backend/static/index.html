@@ -57,12 +57,52 @@
   </div>
   <p id="lobby-error" role="alert"></p>
 
+  <p class="divider">no one to duel yet?</p>
+  <button id="solo-link" class="secondary">practice solo &#9656;</button>
+
+  <p id="stats-strip" aria-live="off"></p>
+
   <div id="demo" aria-hidden="true">
     <span class="demo-label">last round</span>
     <div class="demo-q">17 + 26</div>
     <div class="demo-row">
       <span class="demo-p win">you &#9656; 43 &#10003;</span>
       <span class="demo-p lose">them &#9656; too slow</span>
+    </div>
+  </div>
+</div>
+
+<!-- screen 3: solo practice against a shrinking timer, no opponent, no server round-trip -->
+<div id="solo">
+  <div id="solo-meta">
+    <span class="chip" id="solo-best-chip"></span>
+    <button class="chip" id="solo-leave">&#8592; leave</button>
+  </div>
+
+  <div id="solo-intro">
+    <p class="wait-label">practice mode</p>
+    <div id="solo-intro-title">beat the clock</div>
+    <p id="solo-intro-note">answer fast — the timer shrinks every round.</p>
+    <button id="solo-start" class="primary">start</button>
+  </div>
+
+  <div id="solo-play">
+    <div id="solo-question"></div>
+    <div id="solo-pulse"><div></div></div>
+    <div id="solo-streak"></div>
+    <div id="solo-controls">
+      <input id="solo-answer" type="number" inputmode="numeric" placeholder="answer">
+      <button id="solo-send">go</button>
+    </div>
+  </div>
+
+  <div id="solo-result">
+    <span class="wait-label">run over</span>
+    <div id="solo-final"></div>
+    <p id="solo-final-note"></p>
+    <div id="solo-actions">
+      <button id="solo-retry" class="primary">try again</button>
+      <button id="solo-back" class="secondary">back to lobby</button>
     </div>
   </div>
 </div>
