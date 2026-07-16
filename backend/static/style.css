@@ -71,6 +71,7 @@
     #result-row { transition: none; }
     .result-tri { transition: none; }
     body.match-over #question { animation: none; }
+    #answer.shake { animation: none; }   /* red border still shows — just no physical shake */
     button { transition: none; }
   }
 
@@ -115,6 +116,9 @@
 
   /* --- during play the brand steps aside; the math takes the stage --- */
   body.playing #game { flex: 1; justify-content: center; }  /* game owns the whole viewport */
+  /* optical centering: true geometric center reads as slightly too low, so
+     shrinking the space below (not the space above) nudges the block up */
+  body.match-over #game { padding-bottom: calc(6vh + 3rem); }
   body.playing #logo {
     position: fixed;              /* wordmark docks top-left, like a status bar */
     top: 1rem;
@@ -280,12 +284,11 @@
   }
   #again {
     /* visibility is controlled by its parent #postgame-actions, not its own display —
-       a button toggling its own inline style would fight the container for control */
-    margin-top: 1.8rem;
+       a button toggling its own inline style would fight the container for control.
+       No margin-top here: it's a peer of #rematch inside a flex row now, and a
+       lone leftover margin was the actual cause of the two buttons misaligning. */
     background: var(--panel);
     color: var(--text);
-    border: 2px solid var(--edge);
-    font-size: 1rem;
   }
   #again:hover {
     background: var(--panel);
@@ -306,7 +309,7 @@
     display: none;
     align-items: center;
     gap: 0.6rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.4rem;   /* the big gap belongs before the buttons, not here */
     padding: 0.45rem 1.1rem;
     background: var(--panel);
     border: 1px solid var(--edge);
@@ -326,10 +329,11 @@
 
   #postgame-actions {
     display: none;
+    align-items: center;    /* both buttons share one true baseline, not flex's implicit stretch */
     gap: 1rem;
     flex-wrap: wrap;
     justify-content: center;
-    margin-top: 0.6rem;
+    margin-top: 3.2rem;      /* unmistakably the biggest gap — buttons read as their own "what next" zone */
   }
   /* rematch and back-to-lobby are true peers: identical box, identical border
      width — only fill/color differs. (Different border widths were the bug:
@@ -362,19 +366,21 @@
      converging on the result the way the whole brand has been building toward --- */
   #result-row {
     display: flex;
-    align-items: center;
+    align-items: center;   /* fixed-height triangles center on the headline's optical middle */
     justify-content: center;
     gap: 0;
-    transition: gap 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: gap 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  body.match-over.won #result-row { gap: 1.1rem; }
+  body.match-over.won #result-row { gap: 1.2rem; }
   .result-tri {
     width: 0;
+    height: 2.6rem;    /* roughly half the win headline's cap-height — a real mark, not a stray cursor */
     flex-shrink: 0;
     opacity: 0;
-    transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s ease;
+    margin-top: 0.35rem;  /* nudged toward the text's optical center — cap-line sat too high */
+    transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.45s ease;
   }
-  body.match-over.won .result-tri { width: 1.8rem; opacity: 1; }
+  body.match-over.won .result-tri { width: 2.6rem; opacity: 1; }
   #tri-left polygon  { fill: var(--blue); }
   #tri-right polygon { fill: var(--red); }
 
@@ -399,16 +405,22 @@
   /* --- the final score: legible across the room, not squinted at as pips --- */
   #final-score {
     display: none;
-    align-items: baseline;
+    align-items: center;   /* was baseline — with the dash shrunk down, centering both
+                               against the shared line height is what keeps it looking
+                               mid-numeral instead of sinking toward the baseline */
     gap: 0.7rem;
     font-size: clamp(2.6rem, 10vw, 3.6rem);
     font-weight: 800;
     font-variant-numeric: tabular-nums;
-    margin: 0.3rem 0 1.8rem;
+    margin: 0.3rem 0 0.5rem;   /* tight to the stat below it — the stat IS part of this result */
   }
   .fs-num.you  { color: var(--blue); }
   .fs-num.them { color: var(--red); }
-  .fs-dash { color: var(--dim); font-weight: 400; }
+  .fs-dash {
+    color: var(--dim);
+    font-weight: 400;
+    font-size: 0.45em;   /* a mark between two numbers, not a number-sized minus sign */
+  }
   /* round feedback: a color flash — cyan when you take it, coral when they do */
   #question.flash-you  { animation: flash-you 0.7s ease-out; }
   #question.flash-them { animation: flash-them 0.7s ease-out; }
@@ -503,8 +515,12 @@
     width: 11px;
     height: 11px;
     border-radius: 50%;
-    border: 1.5px solid #4a5070;   /* empty ring bright enough to count at a glance */
+    border: 1.5px solid #5a6488;   /* empty ring bright enough to count at a glance */
   }
+  /* even at zero, each side keeps a whisper of its own color — the cyan-vs-coral
+     identity shouldn't disappear the moment coral hasn't scored yet */
+  .side.you .pip  { border-color: #3d6f96; }
+  .side.them .pip { border-color: #96525a; }
   .side.you .pip.filled  { background: var(--blue); border-color: var(--blue); }
   .side.them .pip.filled { background: var(--red);  border-color: var(--red); }
   .pip.filled { animation: pop 0.25s ease-out; }
@@ -592,6 +608,22 @@
   #answer::-webkit-inner-spin-button,
   #answer::-webkit-outer-spin-button { -webkit-appearance: none; }
   #answer { -moz-appearance: textfield; appearance: textfield; }
+
+  /* --- missed submission: red border persists until the next attempt,
+     a one-shot shake plays once and removes itself via animationend --- */
+  #answer.wrong,
+  #answer.wrong:focus {   /* :focus needs matching to win — the box is almost always
+                              still focused the instant this fires, right after Enter/click */
+    border-color: var(--red);
+  }
+  #answer.shake { animation: shake-wrong 0.4s ease; }
+  @keyframes shake-wrong {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px); }
+    40% { transform: translateX(7px); }
+    60% { transform: translateX(-5px); }
+    80% { transform: translateX(3px); }
+  }
 
   button {
     font-size: 1.2rem;
