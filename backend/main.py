@@ -5,7 +5,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 
-WIN_SCORE = 5
+DEFAULT_TARGET = 5
+VALID_TARGETS = {3, 5, 10}   # an allow-list, not "any number a client sends" — never trust the client
 
 app = FastAPI()
 
@@ -78,10 +79,11 @@ async def start_round(room_code):
 
 
 @app.websocket("/ws/{room_code}")
-async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium"):
-    # FastAPI reads ?difficulty=... straight off the URL into this parameter.
-    # Only the ROOM'S CREATOR's value ever matters — see below, it's stored once
-    # when the room is first created and ignored from anyone who joins after.
+async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium", target: int = DEFAULT_TARGET):
+    # FastAPI reads ?difficulty=...&target=... straight off the URL into these
+    # parameters. Only the ROOM'S CREATOR's values ever matter — see below,
+    # they're stored once when the room is first created and ignored from
+    # anyone who joins after.
     await manager.connect(websocket, room_code)
 
     # duels are 1v1 — reject a third connection instead of silently merging
@@ -101,18 +103,19 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
         # the moment they try to answer.
         games[room_code] = {"answer": None, "scores": {}, "players": {},
                              "question_time": None, "fastest": None, "rematch_requests": set(),
-                             "difficulty": difficulty if difficulty in DIFFICULTIES else "medium"}
+                             "difficulty": difficulty if difficulty in DIFFICULTIES else "medium",
+                             "target": target if target in VALID_TARGETS else DEFAULT_TARGET}
         for i, sock in enumerate(manager.rooms[room_code], start=1):
             name = f"player{i}"
             games[room_code]["players"][sock] = name
             games[room_code]["scores"][name] = 0
-            await sock.send_json({"type": "welcome", "name": name})
+            await sock.send_json({"type": "welcome", "name": name, "target": games[room_code]["target"]})
     else:
         # game already exists — this is a normal second player joining
         player_name = f"player{len(manager.rooms[room_code])}"
         games[room_code]["players"][websocket] = player_name
         games[room_code]["scores"][player_name] = 0
-        await websocket.send_json({"type": "welcome", "name": player_name})
+        await websocket.send_json({"type": "welcome", "name": player_name, "target": games[room_code]["target"]})
 
     if len(manager.rooms[room_code]) == 2:
         await start_round(room_code)
@@ -135,8 +138,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 await manager.broadcast(room_code, {"type": "result", "winner": name,
                                                     "scores": games[room_code]["scores"],
                                                     "time": round(elapsed, 2)})
-                #if player reached win_score, broadcast the result and no new round starts
-                if games[room_code]["scores"][name] >= WIN_SCORE:
+                #if player reached the room's target, broadcast the result and no new round starts
+                if games[room_code]["scores"][name] >= games[room_code]["target"]:
                     await manager.broadcast(room_code, {"type": "game_over", "winner": name,
                                                         "scores": games[room_code]["scores"],
                                                         "fastest": games[room_code]["fastest"]})

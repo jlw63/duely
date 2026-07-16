@@ -122,17 +122,20 @@ function showLobbyError(text) {
     err.classList.add("show");
 }
 
-function joinRoom(room, difficulty) {
+function joinRoom(room, difficulty, target) {
     document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
     }
     leaving = false;
-    // difficulty only matters to whoever CREATES the room — the server stores it
-    // once and every later joiner (typed code, invite link) just inherits it
+    // difficulty/target only matter to whoever CREATES the room — the server
+    // stores them once and every later joiner (typed code, invite link) just inherits them
     let url = proto + "//" + location.host + "/ws/" + room;
-    if (difficulty) { url += "?difficulty=" + difficulty; }
+    const params = [];
+    if (difficulty) { params.push("difficulty=" + difficulty); }
+    if (target) { params.push("target=" + target); }
+    if (params.length) { url += "?" + params.join("&"); }
     ws = new WebSocket(url);
 
     // the connection died and it wasn't us: say so, offer the exit
@@ -233,6 +236,7 @@ ws.onmessage = (e) => {
     }
     if (msg.type === "welcome") {
         me = msg.name;
+        winTarget = msg.target || 5;   // however many points this room's creator picked
         const chip = document.getElementById("me-chip");
         chip.textContent = "you’re cyan ▸";
         chip.classList.add("cyan");
@@ -252,10 +256,13 @@ ws.onmessage = (e) => {
     setWaiting(true);
 }
 
-// --- score pips: 5 per side, you=cyan, them=coral ---
+// --- score pips: one per side, you=cyan, them=coral ---
+// how many is the room's own choice (3/5/10) — learned from "welcome", not hardcoded
+let winTarget = 5;
+
 function renderPips(el, filled) {
     let html = "";
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < winTarget; i++) {
         html += '<span class="pip' + (i < filled ? ' filled' : '') + '"></span>';
     }
     el.innerHTML = html;
@@ -282,6 +289,7 @@ function flashRound(iWon) {
 }
 
 let selectedDifficulty = "medium";
+let selectedTarget = "5";
 
 function createDuel() {
     // mint a shareable 4-letter code; the backend accepts any room string
@@ -290,7 +298,7 @@ function createDuel() {
     for (let i = 0; i < 4; i++) {
         code += letters[Math.floor(Math.random() * letters.length)];
     }
-    joinRoom(code, selectedDifficulty);
+    joinRoom(code, selectedDifficulty, selectedTarget);
 }
 
 function joinTyped() {
@@ -303,6 +311,7 @@ function leaveRoom() {
     if (ws) ws.close();
     ws = null;
     me = null;
+    winTarget = 5;         // back to the default until the next room's "welcome" says otherwise
     // reset the game screen to its factory state for next time
     document.body.classList.remove("playing");   // full-size header returns for the lobby
     document.getElementById("question").textContent = "waiting for opponent...";
@@ -363,6 +372,17 @@ document.querySelectorAll(".diff-opt").forEach((btn) => {
     btn.onclick = () => {
         selectedDifficulty = btn.dataset.difficulty;
         document.querySelectorAll(".diff-opt").forEach((b) => {
+            const active = b === btn;
+            b.classList.toggle("active", active);
+            b.setAttribute("aria-checked", active ? "true" : "false");
+        });
+    };
+});
+
+document.querySelectorAll(".target-opt").forEach((btn) => {
+    btn.onclick = () => {
+        selectedTarget = btn.dataset.target;
+        document.querySelectorAll(".target-opt").forEach((b) => {
             const active = b === btn;
             b.classList.toggle("active", active);
             b.setAttribute("aria-checked", active ? "true" : "false");

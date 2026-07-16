@@ -177,12 +177,14 @@
     gap: 1.1rem;
   }
   /* --- difficulty picker: three peers, one active at a time --- */
-  #difficulty {
+  #difficulty,
+  #target-picker {
     display: flex;
     gap: 0.4rem;
     margin-bottom: 0.2rem;
   }
-  .diff-opt {
+  .diff-opt,
+  .target-opt {
     font-size: 0.78rem;
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -194,8 +196,8 @@
     border-radius: 999px;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
   }
-  .diff-opt:hover { border-color: #4d5b8e; color: var(--text); }
-  .diff-opt.active {
+  .diff-opt:hover, .target-opt:hover { border-color: #4d5b8e; color: var(--text); }
+  .diff-opt.active, .target-opt.active {
     background: rgba(0, 176, 255, 0.12);
     border-color: var(--blue);
     color: var(--blue);
