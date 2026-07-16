@@ -10,6 +10,16 @@
 <svg class="bg-tri left" viewBox="0 0 100 140" aria-hidden="true"><polygon points="0,0 100,70 0,140" fill="#00b0ff"/></svg>
 <svg class="bg-tri right" viewBox="0 0 100 140" aria-hidden="true"><polygon points="100,0 0,70 100,140" fill="#ff5252"/></svg>
 
+<button id="sound-toggle" aria-label="mute sound" aria-pressed="false">
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor"/>
+    <path class="wave" d="M16 8a5 5 0 0 1 0 8" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"/>
+    <path class="wave" d="M18.5 5a9 9 0 0 1 0 14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"/>
+    <line class="mute-x" x1="15" y1="8" x2="21" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line class="mute-x" x1="21" y1="8" x2="15" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+</button>
+
 <div id="logo">
   <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,10 90,50 10,90" fill="#00b0ff"/></svg>
   <div id="wordmark">duely</div>
@@ -20,6 +30,11 @@
 
 <!-- screen 1: the lobby -->
 <div id="lobby">
+  <div id="difficulty" role="radiogroup" aria-label="difficulty">
+    <button class="diff-opt" data-difficulty="easy" role="radio" aria-checked="false">easy</button>
+    <button class="diff-opt active" data-difficulty="medium" role="radio" aria-checked="true">medium</button>
+    <button class="diff-opt" data-difficulty="hard" role="radio" aria-checked="false">hard</button>
+  </div>
   <button id="create">create a duel</button>
   <p class="trust">free · no signup · 2-minute matches</p>
   <p class="divider">have a code?</p>

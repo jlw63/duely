@@ -38,16 +38,50 @@ games = {} #dictionary to store the games
 manager = ConnectionManager()
 
 
+# each generator returns (question_text, correct_answer). Small, composable,
+# easy to add a new one to later — a difficulty is just a list of these.
+def _gen_easy_add():
+    a, b = random.randint(1, 20), random.randint(1, 20)
+    return f"{a} + {b}", a + b
+
+def _gen_add():
+    a, b = random.randint(1, 100), random.randint(1, 100)
+    return f"{a} + {b}", a + b
+
+def _gen_subtract():
+    a, b = random.randint(1, 100), random.randint(1, 100)
+    if b > a:
+        a, b = b, a   # keep it non-negative — no negative answers to type
+    return f"{a} - {b}", a - b
+
+def _gen_multiply():
+    a, b = random.randint(2, 12), random.randint(2, 12)   # times-table range, not 1-100
+    return f"{a} × {b}", a * b
+
+DIFFICULTIES = {
+    "easy":   [_gen_easy_add],
+    "medium": [_gen_add, _gen_subtract],
+    "hard":   [_gen_add, _gen_subtract, _gen_multiply],
+}
+
+def gen_question(difficulty):
+    generators = DIFFICULTIES.get(difficulty, DIFFICULTIES["medium"])   # unrecognized input -> safe default
+    generate = random.choice(generators)
+    return generate()
+
+
 async def start_round(room_code):
-    a = random.randint(1, 100)
-    b = random.randint(1, 100)
-    games[room_code]["answer"] = a + b
+    text, answer = gen_question(games[room_code]["difficulty"])
+    games[room_code]["answer"] = answer
     games[room_code]["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
-    await manager.broadcast(room_code, {"type": "question", "text": f"{a} + {b}"})
+    await manager.broadcast(room_code, {"type": "question", "text": text})
 
 
 @app.websocket("/ws/{room_code}")
-async def websocket_endpoint(websocket: WebSocket, room_code: str):
+async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium"):
+    # FastAPI reads ?difficulty=... straight off the URL into this parameter.
+    # Only the ROOM'S CREATOR's value ever matters — see below, it's stored once
+    # when the room is first created and ignored from anyone who joins after.
     await manager.connect(websocket, room_code)
 
     # duels are 1v1 — reject a third connection instead of silently merging
@@ -66,7 +100,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
         # would otherwise be missing from "players"/"scores" here, crashing
         # the moment they try to answer.
         games[room_code] = {"answer": None, "scores": {}, "players": {},
-                             "question_time": None, "fastest": None, "rematch_requests": set()}
+                             "question_time": None, "fastest": None, "rematch_requests": set(),
+                             "difficulty": difficulty if difficulty in DIFFICULTIES else "medium"}
         for i, sock in enumerate(manager.rooms[room_code], start=1):
             name = f"player{i}"
             games[room_code]["players"][sock] = name

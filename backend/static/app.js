@@ -4,6 +4,16 @@ let ws = null;    // no connection yet — born when a room is joined
     let leaving = false;   // true while WE chose to close, so onclose stays quiet
 
 // --- sound: short tones synthesized on the fly, no audio files needed ---
+// remembered across visits — nobody wants to re-mute every time they reload
+let soundOn = localStorage.getItem("duely-sound") !== "off";
+
+function updateSoundToggle() {
+    const btn = document.getElementById("sound-toggle");
+    btn.classList.toggle("muted", !soundOn);
+    btn.setAttribute("aria-pressed", String(!soundOn));
+    btn.setAttribute("aria-label", soundOn ? "mute sound" : "unmute sound");
+}
+
 let audioCtx = null;
 function getAudioCtx() {
     // browsers block audio until a user gesture has happened (autoplay policy) —
@@ -20,7 +30,9 @@ function getAudioCtx() {
 
 // one oscillator = one pitch. `type` is the waveform: "sine" is smooth/pleasant,
 // "square"/"sawtooth" are buzzier — good for a "miss" or "lose" cue.
+// every sound function routes through here, so this is the one place a mute has to check.
 function playTone(freq, startTime, duration, type, volume) {
+    if (!soundOn) return;
     const ctx = getAudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -110,14 +122,18 @@ function showLobbyError(text) {
     err.classList.add("show");
 }
 
-function joinRoom(room) {
+function joinRoom(room, difficulty) {
     document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
     }
     leaving = false;
-    ws = new WebSocket(proto + "//" + location.host + "/ws/" + room);
+    // difficulty only matters to whoever CREATES the room — the server stores it
+    // once and every later joiner (typed code, invite link) just inherits it
+    let url = proto + "//" + location.host + "/ws/" + room;
+    if (difficulty) { url += "?difficulty=" + difficulty; }
+    ws = new WebSocket(url);
 
     // the connection died and it wasn't us: say so, offer the exit
     ws.onclose = () => {
@@ -265,6 +281,8 @@ function flashRound(iWon) {
     q.classList.add(iWon ? "flash-you" : "flash-them");
 }
 
+let selectedDifficulty = "medium";
+
 function createDuel() {
     // mint a shareable 4-letter code; the backend accepts any room string
     const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // no I/O — they read as 1/0
@@ -272,7 +290,7 @@ function createDuel() {
     for (let i = 0; i < 4; i++) {
         code += letters[Math.floor(Math.random() * letters.length)];
     }
-    joinRoom(code);
+    joinRoom(code, selectedDifficulty);
 }
 
 function joinTyped() {
@@ -333,6 +351,24 @@ document.getElementById("rematch").onclick = () => {
 };
 document.getElementById("create").onclick = createDuel;
 document.getElementById("join").onclick = joinTyped;
+
+document.getElementById("sound-toggle").onclick = () => {
+    soundOn = !soundOn;
+    localStorage.setItem("duely-sound", soundOn ? "on" : "off");
+    updateSoundToggle();
+};
+updateSoundToggle();   // reflect whatever localStorage remembered, on load
+
+document.querySelectorAll(".diff-opt").forEach((btn) => {
+    btn.onclick = () => {
+        selectedDifficulty = btn.dataset.difficulty;
+        document.querySelectorAll(".diff-opt").forEach((b) => {
+            const active = b === btn;
+            b.classList.toggle("active", active);
+            b.setAttribute("aria-checked", active ? "true" : "false");
+        });
+    };
+});
 document.getElementById("room").addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinTyped();
 });
