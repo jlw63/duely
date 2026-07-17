@@ -346,7 +346,10 @@ ws.onmessage = (e) => {
     // chosen display name, learned passively rather than needing its own message
     if (msg.scores) {
         const other = Object.keys(msg.scores).find((n) => n !== me);
-        if (other) { opponentName = other; }
+        if (other) {
+            opponentName = other;
+            document.getElementById("their-side-label").textContent = other;   // real name on THEIR pips, not a static "them" — must match the streak copy/callouts, which already use it
+        }
     }
     if (msg.type === "match_start") {
         startMatchStartCountdown(msg.names);
@@ -386,7 +389,8 @@ ws.onmessage = (e) => {
         updateScore(msg.scores);
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";  // nothing left to answer
-        document.getElementById("streak-badge").classList.remove("show", "hot");  // final-score is the story now, not the streak
+        clearTimeout(streakFadeTimer);
+        document.getElementById("streak-badge").classList.remove("show", "fade");  // final-score is the story now, not the streak
         // clearPostgameState() runs FIRST — it resets score/final-score to their
         // "live play" defaults (pips shown), so the postgame overrides below must
         // come AFTER it, or clearPostgameState undoes them the instant they're set
@@ -500,6 +504,8 @@ function joinRoom(room, difficulty, target, ops) {
     renderPips(document.getElementById("their-pips"), 0);
     resetStreakBadge();
     opponentName = null;
+    document.getElementById("their-side-label").textContent = "them";
+    setEmoteBarOpen(false);
     setWaiting(true);
 }
 
@@ -517,20 +523,36 @@ let emoteToastTimer = null;
 
 function showEmoteToast(emoji, isMine) {
     const toast = document.getElementById("emote-toast");
-    toast.textContent = (isMine ? "you " : theirLabel() + " ") ;
+    toast.textContent = (isMine ? "you " : theirLabel() + " ");
     const glyph = document.createElement("span");
     glyph.className = "emote-glyph";
     glyph.textContent = emoji;
     toast.append(glyph);
-    toast.classList.remove("show");
-    void toast.offsetWidth;   // reflow trick: replays the pop on back-to-back reactions
-    toast.classList.add("show");
+    // docked to whichever EDGE sent it — mine slides in cyan from the left,
+    // theirs slides in coral from the right, so it reads as a reaction FROM
+    // a person's side rather than a caption hovering over the question
+    toast.classList.remove("show", "mine", "theirs");
+    void toast.offsetWidth;   // reflow trick: replays the slide-in on back-to-back reactions
+    toast.classList.add("show", isMine ? "mine" : "theirs");
     clearTimeout(emoteToastTimer);
-    emoteToastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+    emoteToastTimer = setTimeout(() => toast.classList.remove("show", "mine", "theirs"), 1800);
 }
+
+// collapsed behind one toggle — opens the fan-out, closes again the moment
+// a reaction is actually sent, so it never lingers in the answer path
+function setEmoteBarOpen(open) {
+    document.getElementById("emote-bar").classList.toggle("show", open);
+    document.getElementById("emote-toggle").setAttribute("aria-expanded", open.toString());
+}
+
+document.getElementById("emote-toggle").onclick = () => {
+    const isOpen = document.getElementById("emote-bar").classList.contains("show");
+    setEmoteBarOpen(!isOpen);
+};
 
 document.querySelectorAll(".emote-btn").forEach((btn) => {
     btn.onclick = () => {
+        setEmoteBarOpen(false);
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         const emoji = btn.dataset.emoji;
         ws.send(JSON.stringify({ type: "emote", emoji }));
@@ -573,9 +595,17 @@ function flashRound(iWon) {
 // --- duel streak: consecutive rounds taken by the SAME side, tracked purely
 // client-side from "result" messages — cosmetic feedback only, mirrors solo's
 // "current run" callout without touching the actual scoring/win condition,
-// so it can't tilt a competitive 1v1 the way a real bonus would ---
+// so it can't tilt a competitive 1v1 the way a real bonus would.
+// Fires at 3+ (not 2 — a 2-streak happens almost every match and would dilute
+// "on fire" into background noise), docked above whichever side's pips are
+// actually streaking, and transient: it holds briefly then fades, rather than
+// sitting permanently between the score and the input where the eye travels
+// to answer the next question. ---
 let streakName = null;
 let streakCount = 0;
+let streakFadeTimer = null;
+const STREAK_THRESHOLD = 3;
+const STREAK_HOLD_MS = 2200;
 
 function updateStreak(winnerName) {
     if (winnerName === streakName) {
@@ -585,28 +615,27 @@ function updateStreak(winnerName) {
         streakCount = 1;
     }
     const badge = document.getElementById("streak-badge");
-    if (streakCount < 2) {   // one round doesn't make a streak — needs a back-to-back to mean anything
-        badge.classList.remove("show");
+    clearTimeout(streakFadeTimer);
+    if (streakCount < STREAK_THRESHOLD) {
+        badge.classList.remove("show", "fade");
         return;
     }
     const iAmStreaking = streakName === me;
-    const isHot = streakCount >= 3;
-    // flames scale with the streak (capped at 3) — the badge itself escalates
-    // from outline to filled+glowing via the "hot" class at the same threshold
-    const flames = "\u{1F525}".repeat(Math.min(streakCount - 1, 3));
+    const flames = "\u{1F525}".repeat(Math.min(streakCount - STREAK_THRESHOLD + 1, 3));   // scales, capped at 3
     badge.textContent = (iAmStreaking ? "you're" : theirLabel() + " is") + " on a " + streakCount + "-streak " + flames;
-    badge.classList.remove("you", "them");
+    badge.classList.remove("you", "them", "fade");
     badge.classList.add(iAmStreaking ? "you" : "them");
-    badge.classList.toggle("hot", isHot);
     badge.classList.remove("show");
     void badge.offsetWidth;   // reflow trick: replays the pop animation on every extension, not just the first
     badge.classList.add("show");
+    streakFadeTimer = setTimeout(() => badge.classList.add("fade"), STREAK_HOLD_MS);
 }
 
 function resetStreakBadge() {
     streakName = null;
     streakCount = 0;
-    document.getElementById("streak-badge").classList.remove("show", "hot");
+    clearTimeout(streakFadeTimer);
+    document.getElementById("streak-badge").classList.remove("show", "fade");
 }
 
 let selectedDifficulty = "medium";
