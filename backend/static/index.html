@@ -130,6 +130,7 @@
   <div id="meta">
     <span class="chip" id="room-chip"></span>
     <span class="chip" id="me-chip">connecting...</span>
+    <button class="chip" id="debug-disconnect" style="display:none;" title="testing only: force-closes YOUR OWN socket, simulating a real drop">simulate drop</button>
     <button class="chip" id="leave">&#8592; leave</button>
   </div>
   <div id="wait">
@@ -142,6 +143,7 @@
     </div>
     <p id="wait-note">waiting for opponent…</p>
   </div>
+  <p id="connection-status" aria-live="polite"></p>
   <div id="result-row">
     <svg id="tri-left" class="result-tri" viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,10 90,50 10,90"/></svg>
     <div id="question">waiting for opponent...</div>

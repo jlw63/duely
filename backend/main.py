@@ -1,3 +1,4 @@
+import asyncio
 import random
 import time
 
@@ -7,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 DEFAULT_TARGET = 5
 VALID_TARGETS = {3, 5, 10, 15, 30}   # an allow-list, not "any number a client sends" — never trust the client
+GRACE_SECONDS = 20   # a dropped wifi signal shouldn't instantly end someone's match
 
 app = FastAPI()
 
@@ -35,6 +37,11 @@ class ConnectionManager:
     async def broadcast(self, room_code, message):
         for connection in self.rooms[room_code]: #get the room code from the rooms dictionary
             await connection.send_json(message) #send the message to all connections in the room code
+
+    async def broadcast_except(self, room_code, message, excluded):
+        for connection in self.rooms[room_code]:
+            if connection is not excluded:
+                await connection.send_json(message)
 games = {} #dictionary to store the games
 manager = ConnectionManager()
 
@@ -106,8 +113,19 @@ def gen_question(difficulty, ops):
 async def start_round(room_code):
     text, answer = gen_question(games[room_code]["difficulty"], games[room_code]["ops"])
     games[room_code]["answer"] = answer
+    games[room_code]["question_text"] = text   # so a reconnecting player can be resent the LIVE question, not just told a round exists
     games[room_code]["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
     await manager.broadcast(room_code, {"type": "question", "text": text})
+
+
+async def expire_disconnect(room_code, name):
+    await asyncio.sleep(GRACE_SECONDS)
+    game = games.get(room_code)
+    if not game or name not in game.get("pending_disconnects", {}):
+        return   # they reconnected before the window ran out — nothing to expire
+    del games[room_code]
+    if room_code in manager.rooms:
+        await manager.broadcast(room_code, {"type": "opponent_left"})
 
 
 @app.websocket("/ws/{room_code}")
@@ -137,8 +155,10 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
         # would otherwise be missing from "players"/"scores" here, crashing
         # the moment they try to answer.
         requested_ops = [op.strip() for op in ops.split(",") if op.strip() in OPERATIONS]
-        games[room_code] = {"answer": None, "scores": {}, "players": {},
+        games[room_code] = {"answer": None, "scores": {}, "players": {}, "question_text": None,
                              "question_time": None, "fastest": None, "rematch_requests": set(),
+                             "pending_disconnects": {},   # name -> asyncio task, while they're mid-reconnect-window
+                             "paused": False,   # true while someone's mid-reconnect-window — no scoring off an absent opponent
                              "difficulty": difficulty if difficulty in NUMBER_RANGE else "medium",
                              "target": target if target in VALID_TARGETS else DEFAULT_TARGET,
                              "ops": requested_ops or DEFAULT_OPS}
@@ -147,14 +167,46 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
             games[room_code]["players"][sock] = name
             games[room_code]["scores"][name] = 0
             await sock.send_json({"type": "welcome", "name": name, "target": games[room_code]["target"]})
+        reconnect_name = None
     else:
-        # game already exists — this is a normal second player joining
-        player_name = f"player{len(manager.rooms[room_code])}"
-        games[room_code]["players"][websocket] = player_name
-        games[room_code]["scores"][player_name] = 0
-        await websocket.send_json({"type": "welcome", "name": player_name, "target": games[room_code]["target"]})
+        # a name is "pending disconnect" while its socket is gone but still inside
+        # the grace window — anyone reconnecting to this room while one is open
+        # is assumed to be that departed player, reclaiming their slot rather
+        # than being treated as a brand new joiner (no per-client identity token
+        # exists to prove it, so this is a best-effort match, not a guarantee —
+        # fine for a casual 1v1 game, see the comment on pending_disconnects)
+        pending = games[room_code]["pending_disconnects"]
+        reconnect_name = None
+        if pending:
+            reconnect_name, task = pending.popitem()
+            task.cancel()
 
-    if len(manager.rooms[room_code]) == 2:
+        if reconnect_name:
+            games[room_code]["players"][websocket] = reconnect_name
+            games[room_code]["paused"] = False
+            await websocket.send_json({"type": "welcome", "name": reconnect_name,
+                                        "target": games[room_code]["target"],
+                                        "reconnected": True, "scores": games[room_code]["scores"]})
+            # only the OTHER player needs telling — broadcasting this to the
+            # reconnecting socket too would race ahead of its own question resend below
+            await manager.broadcast_except(room_code, {"type": "opponent_reconnected"}, websocket)
+            if games[room_code]["answer"] is not None and games[room_code]["question_text"]:
+                # bring them back into the LIVE round, not a blank screen — and
+                # restart its clock, so the pause itself is never counted as
+                # part of anyone's answer time
+                games[room_code]["question_time"] = time.monotonic()
+                await websocket.send_json({"type": "question", "text": games[room_code]["question_text"]})
+        else:
+            # game already exists — this is a normal second player joining
+            player_name = f"player{len(manager.rooms[room_code])}"
+            games[room_code]["players"][websocket] = player_name
+            games[room_code]["scores"][player_name] = 0
+            await websocket.send_json({"type": "welcome", "name": player_name, "target": games[room_code]["target"]})
+
+    # only kick off the FIRST round when two players originally come together —
+    # a reconnect must never generate a fresh question out from under whoever
+    # stayed connected and was mid-round
+    if len(manager.rooms[room_code]) == 2 and not reconnect_name and games[room_code]["question_time"] is None:
         await start_round(room_code)
 
     try:
@@ -162,6 +214,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
             data = await websocket.receive_json()
             if (data.get("type") == "answer"
                     and room_code in games
+                    and not games[room_code]["paused"]   # opponent's mid-reconnect — no free points off an absent player
                     and games[room_code]["answer"] is not None  #no live round -> nothing can score
                     and data.get("value") == games[room_code]["answer"]):
                 name = games[room_code]["players"][websocket]
@@ -202,10 +255,19 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                     await manager.broadcast(room_code, {"type": "rematch_pending", "name": name})
 
     except WebSocketDisconnect:
+        name = games.get(room_code, {}).get("players", {}).pop(websocket, None)
         manager.disconnect(websocket, room_code)
-        if room_code in games:
+        if room_code in games and name is not None:
+            # give them GRACE_SECONDS to come back before the match is abandoned —
+            # scores/question stay put in games[room_code], only the socket is gone
+            task = asyncio.create_task(expire_disconnect(room_code, name))
+            games[room_code]["pending_disconnects"][name] = task
+            games[room_code]["paused"] = True   # no scoring off an absent opponent until they're back
+            if room_code in manager.rooms:
+                await manager.broadcast(room_code, {"type": "opponent_disconnected", "grace_seconds": GRACE_SECONDS})
+        elif room_code in games:
             del games[room_code]
-        if room_code in manager.rooms:
-            await manager.broadcast(room_code, {"type": "opponent_left"})
+            if room_code in manager.rooms:
+                await manager.broadcast(room_code, {"type": "opponent_left"})
         
 app.mount("/", StaticFiles(directory="static", html=True))

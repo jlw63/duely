@@ -165,8 +165,96 @@ function showLobbyError(text) {
     err.classList.add("show");
 }
 
-function joinRoom(room, difficulty, target, ops) {
-    document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
+// --- reconnect: a dropped socket gets a short window of silent retries before
+// giving up. The server holds the match's state open for its own grace period
+// (see GRACE_SECONDS in main.py) — this is the client-side half of that same
+// idea, so a flaky wifi blip doesn't have to end the match on either side. ---
+let lastJoinParams = null;     // remembered so a retry reopens the SAME room/settings, not a fresh join
+let hasJoinedGame = false;     // true once "welcome" arrives — gates retries to a real mid-match drop,
+                                // not a failed FIRST connection (room full, bad code, etc.)
+let reconnectTimer = null;
+let reconnectDeadline = 0;
+const RECONNECT_RETRY_MS = 1500;
+const RECONNECT_WINDOW_MS = 18000;   // a bit under the server's own grace window
+
+function showConnectionStatus(text) {
+    const el = document.getElementById("connection-status");
+    el.textContent = text;
+    el.classList.add("show");
+}
+function hideConnectionStatus() {
+    document.getElementById("connection-status").classList.remove("show");
+}
+
+// answering while the opponent's gone is disabled client-side to match the
+// server (which silently ignores answers while games[room_code]["paused"]) —
+// and the pulse bar visibly freezes rather than hiding, so the match reads as
+// "on hold", not "over"
+function setMatchPaused(paused) {
+    document.getElementById("answer").disabled = paused;
+    document.getElementById("send").disabled = paused;
+    document.getElementById("pulse").classList.toggle("paused", paused);
+}
+
+let opponentGraceInterval = null;
+let lastQuestionText = "";   // so the paused screen can hand the LIVE question back, not a blank one
+
+// the pause takes over the question area itself — hidden pulse/controls, a
+// countdown standing in where the question was — rather than a small banner
+// next to a question that's misleadingly still sitting there unanswerable
+function startOpponentGraceCountdown(totalSeconds) {
+    let remaining = Math.round(totalSeconds);
+    clearInterval(opponentGraceInterval);
+    setMatchPaused(true);
+    document.getElementById("pulse").style.display = "none";
+    document.getElementById("controls").style.display = "none";
+    const questionEl = document.getElementById("question");
+    const tick = () => {
+        questionEl.textContent = "waiting for opponent to reconnect… (" + remaining + "s)";
+        remaining -= 1;
+    };
+    tick();
+    opponentGraceInterval = setInterval(() => {
+        if (remaining < 0) { clearInterval(opponentGraceInterval); opponentGraceInterval = null; return; }
+        tick();
+    }, 1000);
+}
+
+function stopOpponentGraceCountdown() {
+    clearInterval(opponentGraceInterval);
+    opponentGraceInterval = null;
+    setMatchPaused(false);
+    document.getElementById("question").textContent = lastQuestionText;
+    document.getElementById("pulse").style.display = "block";
+    document.getElementById("controls").style.display = "flex";
+}
+
+function giveUpReconnecting() {
+    reconnectDeadline = 0;
+    hideConnectionStatus();
+    document.getElementById("question").textContent = "connection lost";
+    document.getElementById("pulse").style.display = "none";
+    document.getElementById("controls").style.display = "none";
+    document.getElementById("rematch").style.display = "none";   // no one to rematch with
+    document.getElementById("postgame-actions").style.display = "flex";  // reveals "back to lobby"
+}
+
+function attemptReconnect() {
+    if (!reconnectDeadline) { reconnectDeadline = performance.now() + RECONNECT_WINDOW_MS; }
+    showConnectionStatus("connection lost — reconnecting…");
+    setMatchPaused(true);   // our own socket is down — nothing to send anyway
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+        if (performance.now() > reconnectDeadline) { giveUpReconnecting(); return; }
+        buildSocket(lastJoinParams.room, lastJoinParams.difficulty, lastJoinParams.target, lastJoinParams.ops);
+    }, RECONNECT_RETRY_MS);
+}
+
+// opens (or reopens) the websocket and wires its handlers. Used both for the
+// original join AND every reconnect retry — reconnecting must NOT touch the
+// screen/pips setup that joinRoom does once below, or a mid-match reconnect
+// would look like starting a brand new duel from scratch.
+function buildSocket(room, difficulty, target, ops) {
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
@@ -182,14 +270,14 @@ function joinRoom(room, difficulty, target, ops) {
     if (params.length) { url += "?" + params.join("&"); }
     ws = new WebSocket(url);
 
-    // the connection died and it wasn't us: say so, offer the exit
+    // the connection died and it wasn't us: retry silently if we were mid-match,
+    // otherwise say so and offer the exit
     ws.onclose = () => {
-        if (!leaving) {
-            document.getElementById("question").textContent = "connection lost";
-            document.getElementById("pulse").style.display = "none";
-            document.getElementById("controls").style.display = "none";
-            document.getElementById("rematch").style.display = "none";   // no one to rematch with
-            document.getElementById("postgame-actions").style.display = "flex";  // reveals "back to lobby"
+        if (leaving) return;
+        if (hasJoinedGame) {
+            attemptReconnect();
+        } else {
+            giveUpReconnecting();
         }
     };
 
@@ -205,6 +293,7 @@ ws.onmessage = (e) => {
             renderPips(document.getElementById("their-pips"), 0);
         }
         setWaiting(false);                                            // opponent's here — match on
+        lastQuestionText = msg.text;
         document.getElementById("question").textContent = msg.text;
         document.getElementById("pulse").style.display = "block";   // round is live
         document.getElementById("answer").focus();                   // hands on keys, every round
@@ -266,6 +355,8 @@ ws.onmessage = (e) => {
     }
     if (msg.type === "opponent_left") {
         setWaiting(false);   // in case they bailed before the match even started
+        hideConnectionStatus();
+        stopOpponentGraceCountdown();
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";
@@ -274,6 +365,16 @@ ws.onmessage = (e) => {
         document.getElementById("rematch").style.display = "none";   // no one to rematch with
         document.getElementById("postgame-actions").style.display = "flex";  // reveals "back to lobby"
         document.body.classList.add("match-over");   // header trims; no won/lost — nobody actually won this
+    }
+    // their socket dropped — the server is holding the match open for a
+    // little while, waiting to see if they come back, same idea as our own
+    // reconnect logic above but for the OTHER side of the duel
+    if (msg.type === "opponent_disconnected") {
+        startOpponentGraceCountdown(msg.grace_seconds || 20);
+    }
+    if (msg.type === "opponent_reconnected") {
+        stopOpponentGraceCountdown();
+        hideConnectionStatus();
     }
     if (msg.type === "room_full") {
         leaving = true;   // this close is expected — don't let onclose show "connection lost"
@@ -285,8 +386,28 @@ ws.onmessage = (e) => {
         const chip = document.getElementById("me-chip");
         chip.textContent = "you’re cyan ▸";
         chip.classList.add("cyan");
+        hasJoinedGame = true;
+        reconnectDeadline = 0;
+        clearTimeout(reconnectTimer);
+        hideConnectionStatus();
+        setMatchPaused(false);   // covers OUR OWN reconnect; opponent_reconnected handles the other side
+        if (msg.reconnected) {
+            // WE just reconnected mid-match — resync score, but the screen/pips
+            // were never torn down (this socket reopened silently), so no
+            // other setup here, just bring the numbers back in line
+            updateScore(msg.scores);
+        }
     }
 };
+}
+
+function joinRoom(room, difficulty, target, ops) {
+    document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
+    hasJoinedGame = false;
+    reconnectDeadline = 0;
+    clearTimeout(reconnectTimer);
+    lastJoinParams = { room, difficulty, target, ops };
+    buildSocket(room, difficulty, target, ops);
 
     // swap screens: lobby out, game in (waiting state: share the code)
     currentRoom = room;
@@ -616,6 +737,16 @@ document.getElementById("copy").onclick = () => {
     btn.textContent = "copied ✓";
     setTimeout(() => { btn.textContent = "copy invite link"; }, 1500);
 };
+
+// testing-only: lets a dev simulate a real dropped connection (server sees an
+// actual WebSocketDisconnect, unlike DevTools' "Offline" throttling, which
+// leaves an already-open socket alive and never actually fires it) without
+// needing a second device or fighting DevTools' network panel
+if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    const debugBtn = document.getElementById("debug-disconnect");
+    debugBtn.style.display = "inline-block";
+    debugBtn.onclick = () => { if (ws) ws.close(); };
+}
 
 document.getElementById("leave").onclick = leaveRoom;
 document.getElementById("again").onclick = leaveRoom;

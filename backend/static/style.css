@@ -465,6 +465,16 @@
     border-color: var(--red);
     background: rgba(255, 82, 82, 0.1);
   }
+  /* testing-only control (localhost only, see app.js) — amber, not the
+     cyan/coral duel palette, so it never reads as a real gameplay action */
+  #debug-disconnect {
+    color: #e0a020;
+    border-color: rgba(224, 160, 32, 0.4);
+  }
+  #debug-disconnect:hover {
+    border-color: #e0a020;
+    background: rgba(224, 160, 32, 0.1);
+  }
   #again {
     /* visibility is controlled by its parent #postgame-actions, not its own display —
        a button toggling its own inline style would fight the container for control.
@@ -545,6 +555,22 @@
     background: rgba(255,255,255,0.05);
     border-color: #4d5b8e;
   }
+
+  /* a transient banner for connection hiccups — ours ("reconnecting…") or
+     theirs ("opponent disconnected…") — never both at once, never permanent */
+  #connection-status {
+    display: none;
+    color: var(--soft);
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0 0 0.9rem;
+    text-align: center;
+  }
+  #connection-status.show { display: block; }
 
   /* --- the win/lose moment: the flanking triangles echo the logo's face-off,
      converging on the result the way the whole brand has been building toward --- */
@@ -633,6 +659,16 @@
   @keyframes sweep {
     from { transform: translateX(-30%); }
     to   { transform: translateX(215%); }
+  }
+  /* the match is on hold, not over — the bar freezes mid-sweep rather than
+     hiding, same "paused" language a video player uses */
+  #pulse.paused div {
+    animation-play-state: paused;
+    background: var(--dim);
+  }
+  #answer:disabled, #send:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* --- waiting room: the code is the hero; its job is getting shared --- */
