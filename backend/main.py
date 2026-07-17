@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 
 DEFAULT_TARGET = 5
-VALID_TARGETS = {3, 5, 10}   # an allow-list, not "any number a client sends" — never trust the client
+VALID_TARGETS = {3, 5, 10, 15, 30}   # an allow-list, not "any number a client sends" — never trust the client
 
 app = FastAPI()
 

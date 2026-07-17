@@ -30,35 +30,52 @@
 
 <!-- screen 1: the lobby -->
 <div id="lobby">
-  <div id="difficulty" role="radiogroup" aria-label="difficulty">
-    <!-- ranges here must match NUMBER_RANGE in main.py — this is display copy, not logic, so it can't enforce itself -->
-    <button class="diff-opt" data-difficulty="easy" role="radio" aria-checked="false">easy<span class="diff-range">1&ndash;20</span></button>
-    <button class="diff-opt active" data-difficulty="medium" role="radio" aria-checked="true">medium<span class="diff-range">1&ndash;100</span></button>
-    <button class="diff-opt" data-difficulty="hard" role="radio" aria-checked="false">hard<span class="diff-range">1&ndash;300</span></button>
-  </div>
-  <div id="target-picker" role="radiogroup" aria-label="first to how many points">
-    <button class="target-opt" data-target="3" role="radio" aria-checked="false">first to 3</button>
-    <button class="target-opt active" data-target="5" role="radio" aria-checked="true">first to 5</button>
-    <button class="target-opt" data-target="10" role="radio" aria-checked="false">first to 10</button>
-  </div>
-  <div id="ops-picker" role="group" aria-label="operations">
-    <button class="op-opt active" data-op="add" role="checkbox" aria-checked="true">+</button>
-    <button class="op-opt active" data-op="sub" role="checkbox" aria-checked="true">&minus;</button>
-    <button class="op-opt" data-op="mul" role="checkbox" aria-checked="false">&times;</button>
-    <button class="op-opt" data-op="div" role="checkbox" aria-checked="false">&divide;</button>
-    <button class="op-opt" data-op="mod" role="checkbox" aria-checked="false">%</button>
-  </div>
   <button id="create">create a duel</button>
   <p class="trust">free · no signup · 2-minute matches</p>
-  <p class="divider">have a code?</p>
+
+  <div id="settings-block">
+    <button id="settings-toggle" aria-expanded="false" aria-controls="settings-card">match settings <span class="chevron">&#9662;</span></button>
+    <div id="settings-card">
+      <div class="setting-group">
+        <span class="setting-label">difficulty</span>
+        <div id="difficulty" role="radiogroup" aria-label="difficulty">
+          <!-- ranges here must match NUMBER_RANGE in main.py — this is display copy, not logic, so it can't enforce itself -->
+          <button class="diff-opt" data-difficulty="easy" role="radio" aria-checked="false">easy<span class="diff-range">1&ndash;20</span></button>
+          <button class="diff-opt active" data-difficulty="medium" role="radio" aria-checked="true">medium<span class="diff-range">1&ndash;100</span></button>
+          <button class="diff-opt" data-difficulty="hard" role="radio" aria-checked="false">hard<span class="diff-range">1&ndash;300</span></button>
+        </div>
+      </div>
+      <div class="setting-group">
+        <span class="setting-label">race to</span>
+        <div id="target-picker" role="radiogroup" aria-label="first to how many points">
+          <button class="target-opt" data-target="3" role="radio" aria-checked="false">3</button>
+          <button class="target-opt active" data-target="5" role="radio" aria-checked="true">5</button>
+          <button class="target-opt" data-target="10" role="radio" aria-checked="false">10</button>
+          <button class="target-opt" data-target="15" role="radio" aria-checked="false">15</button>
+          <button class="target-opt" data-target="30" role="radio" aria-checked="false">30</button>
+        </div>
+      </div>
+      <div class="setting-group">
+        <span class="setting-label">operations</span>
+        <div id="ops-picker" role="group" aria-label="operations">
+          <button class="op-opt active" data-op="add" role="checkbox" aria-checked="true">+</button>
+          <button class="op-opt active" data-op="sub" role="checkbox" aria-checked="true">&minus;</button>
+          <button class="op-opt" data-op="mul" role="checkbox" aria-checked="false">&times;</button>
+          <button class="op-opt" data-op="div" role="checkbox" aria-checked="false">&divide;</button>
+          <button class="op-opt" data-op="mod" role="checkbox" aria-checked="false">%</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="divider join-divider">have a code?</p>
   <div class="pill-group">
     <input id="room" type="text" placeholder="room code" maxlength="12">
     <button id="join">join</button>
   </div>
   <p id="lobby-error" role="alert"></p>
 
-  <p class="divider">no one to duel yet?</p>
-  <button id="solo-link" class="secondary">practice solo &#9656;</button>
+  <button id="solo-link">practice solo &#9656;</button>
 
   <p id="stats-strip" aria-live="off"></p>
 
@@ -89,6 +106,7 @@
   <div id="solo-play">
     <div id="solo-question"></div>
     <div id="solo-pulse"><div></div></div>
+    <div id="solo-timer-num" aria-hidden="true"></div>
     <div id="solo-streak"></div>
     <div id="solo-controls">
       <input id="solo-answer" type="number" inputmode="numeric" placeholder="answer">

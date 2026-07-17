@@ -405,9 +405,10 @@ function soloGenQuestion(difficulty, ops) {
 // ("how far can you push before the clock catches you") instead of a
 // pass/fail wall each round — there's no human opponent to be fair to here,
 // so the pressure comes entirely from this one resource running out. ---
-const SOLO_BASE_TIME = 13;    // starting bank
-const SOLO_BONUS = 3;         // added to the bank per correct answer
-const SOLO_MAX_BANK = 13;     // hard cap — the bar's "full" reading
+const SOLO_BASE_TIME = 11;    // starting bank
+const SOLO_BONUS = 2;         // added to the bank per correct answer
+const SOLO_MAX_BANK = 11;     // hard cap — the bar's "full" reading; kept equal to
+                               // the starting bank so the run opens with a full bar
 
 // --- solo state machine: intro -> play -> result, same "screens" pattern as lobby/game ---
 let soloCorrectAnswer = null;
@@ -471,8 +472,18 @@ function startSoloTimer() {
     const bar = document.querySelector("#solo-pulse div");
     bar.classList.remove("low");
     bar.style.width = ((soloTimeBank / SOLO_MAX_BANK) * 100) + "%";
+    updateSoloTimerNum();
     stopSoloTimer();   // clear any previous loop before starting a fresh one
     soloTimerHandle = requestAnimationFrame(soloTick);
+}
+
+// whole seconds left, rounded up — "2" should mean "still some of second 2
+// left", not flash to "1" the instant it ticks below 2.0
+function updateSoloTimerNum() {
+    const num = document.getElementById("solo-timer-num");
+    const secondsLeft = Math.max(0, Math.ceil(soloTimeBank));
+    num.textContent = secondsLeft;
+    num.classList.toggle("low", (soloTimeBank / SOLO_MAX_BANK) < 0.25);
 }
 
 function stopSoloTimer() {
@@ -487,6 +498,7 @@ function soloTick(now) {
     const pct = Math.max(0, (soloTimeBank / SOLO_MAX_BANK) * 100);
     bar.style.width = pct + "%";
     bar.classList.toggle("low", pct < 25);   // the last stretch turns the bar red — real urgency, not decoration
+    updateSoloTimerNum();
     if (soloTimeBank <= 0) {
         stopSoloTimer();
         soloFlashMiss();
@@ -618,6 +630,18 @@ document.getElementById("rematch").onclick = () => {
 };
 document.getElementById("create").onclick = createDuel;
 document.getElementById("join").onclick = joinTyped;
+
+// settings stay collapsed by default — most visitors keep the defaults and
+// only need this open when they specifically want to change something
+document.getElementById("settings-toggle").onclick = () => {
+    const toggle = document.getElementById("settings-toggle");
+    const card = document.getElementById("settings-card");
+    const expanded = card.classList.toggle("show");
+    toggle.setAttribute("aria-expanded", expanded.toString());
+    // closed -> ▾ (more below), open -> ▴ (collapse back up) — an explicit glyph
+    // swap, not a rotated ▾, so the character itself is never ambiguous
+    toggle.querySelector(".chevron").textContent = expanded ? "▴" : "▾";
+};
 
 document.getElementById("solo-link").onclick = enterSolo;
 document.getElementById("solo-leave").onclick = leaveSolo;
