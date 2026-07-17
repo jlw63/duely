@@ -97,6 +97,7 @@
     body.match-over #question { animation: none; }
     #answer.shake, #room.shake, #solo-answer.shake { animation: none; }   /* red border still shows — just no physical shake */
     button { transition: none; }
+    .ms-count { animation: none; }
   }
 
   /* --- brand header --- */
@@ -596,6 +597,54 @@
     text-align: center;
   }
   #connection-status.show { display: block; }
+
+  /* --- the pre-round face-off: names flank a big pulsing countdown, same
+     cyan-vs-coral language as the pips/score below — a proper "match intro"
+     beat instead of one crammed-together line of text --- */
+  #match-start-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.6rem;
+  }
+  #match-start-screen.show { display: flex; }
+  .ms-name {
+    font-size: clamp(1.3rem, 5vw, 1.9rem);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .ms-name.you  { color: var(--blue); }
+  .ms-name.them { color: var(--red); }
+  .ms-count-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 0.1rem 0;
+  }
+  /* flanking rules echo the logo's face-off triangles — the number sits
+     between two closing brackets, not floating alone mid-sentence */
+  .ms-count-wrap::before, .ms-count-wrap::after {
+    content: "";
+    width: clamp(1.4rem, 6vw, 2.6rem);
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--blue), var(--red));
+  }
+  .ms-count-wrap::before { background: linear-gradient(90deg, var(--red), var(--blue)); }
+  .ms-count {
+    font-size: clamp(3.2rem, 14vw, 5rem);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--text);
+    text-shadow: 0 0 28px rgba(0, 176, 255, 0.35), 0 0 28px rgba(255, 82, 82, 0.25);
+    animation: ms-pulse 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @keyframes ms-pulse {
+    from { opacity: 0; transform: scale(1.6); }
+  }
 
   /* --- the win/lose moment: the flanking triangles echo the logo's face-off,
      converging on the result the way the whole brand has been building toward --- */

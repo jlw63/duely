@@ -142,6 +142,19 @@ async def start_round(room_code):
     await manager.broadcast(room_code, {"type": "question", "text": text, "scores": games[room_code]["scores"]})
 
 
+ANNOUNCE_SECONDS = 3   # "you vs them" beat before the clock starts — also the only
+                       # place in a normal match a player's chosen name actually shows up
+
+async def announce_and_start(room_code):
+    # both names, straight from the source — same reason scores rides along
+    # on "question": whichever key isn't "me" is the opponent
+    await manager.broadcast(room_code, {"type": "match_start",
+                                         "names": list(games[room_code]["scores"].keys())})
+    await asyncio.sleep(ANNOUNCE_SECONDS)
+    if room_code in games:   # the room could've been abandoned mid-countdown (opponent left)
+        await start_round(room_code)
+
+
 async def expire_disconnect(room_code, name):
     await asyncio.sleep(GRACE_SECONDS)
     game = games.get(room_code)
@@ -238,7 +251,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
     # a reconnect must never generate a fresh question out from under whoever
     # stayed connected and was mid-round
     if len(manager.rooms[room_code]) == 2 and not reconnect_name and games[room_code]["question_time"] is None:
-        await start_round(room_code)
+        await announce_and_start(room_code)
 
     try:
         while True:
@@ -280,7 +293,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                         games[room_code]["scores"][p] = 0
                     games[room_code]["rematch_requests"] = set()
                     games[room_code]["fastest"] = None
-                    await start_round(room_code)
+                    await announce_and_start(room_code)
                 else:
                     # one side is waiting on the other
                     await manager.broadcast(room_code, {"type": "rematch_pending", "name": name})

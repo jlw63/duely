@@ -239,9 +239,53 @@ function stopOpponentGraceCountdown() {
     document.getElementById("controls").style.display = "flex";
 }
 
+let matchStartInterval = null;
+
+// the pre-round beat: names flanking a big pulsing countdown — this is the
+// ONE place in a normal match a chosen display name is guaranteed to actually
+// show up, since the rest (streak badge, fastest-answer stat) are situational
+function startMatchStartCountdown(names) {
+    const other = names.find((n) => n !== me);
+    if (other) { opponentName = other; }
+    setWaiting(false);
+    document.getElementById("pulse").style.display = "none";
+    document.getElementById("controls").style.display = "none";
+    document.getElementById("result-row").style.display = "none";   // the countdown screen replaces it, not sits beside it
+    document.getElementById("ms-you").textContent = "you";
+    document.getElementById("ms-them").textContent = theirLabel();
+    document.getElementById("match-start-screen").classList.add("show");
+    const countEl = document.getElementById("ms-count");
+    let remaining = 3;
+    clearInterval(matchStartInterval);
+    const tick = () => {
+        countEl.textContent = remaining > 0 ? remaining : "GO";
+        countEl.style.animation = "none";
+        void countEl.offsetWidth;   // reflow trick: replays the pulse animation on every tick, not just the first
+        countEl.style.animation = "";
+    };
+    tick();
+    matchStartInterval = setInterval(() => {
+        remaining -= 1;
+        if (remaining < -1) {
+            clearInterval(matchStartInterval);
+            matchStartInterval = null;
+            return;
+        }
+        tick();
+    }, 1000);
+}
+
+function hideMatchStartScreen() {
+    document.getElementById("match-start-screen").classList.remove("show");
+    document.getElementById("result-row").style.display = "";
+}
+
 function giveUpReconnecting() {
     reconnectDeadline = 0;
     hideConnectionStatus();
+    clearInterval(matchStartInterval);
+    matchStartInterval = null;
+    hideMatchStartScreen();
     document.getElementById("question").textContent = "connection lost";
     document.getElementById("pulse").style.display = "none";
     document.getElementById("controls").style.display = "none";
@@ -304,6 +348,9 @@ ws.onmessage = (e) => {
         const other = Object.keys(msg.scores).find((n) => n !== me);
         if (other) { opponentName = other; }
     }
+    if (msg.type === "match_start") {
+        startMatchStartCountdown(msg.names);
+    }
     if (msg.type === "question") {
         // a "question" after postgame-actions was showing means this is a rematch's
         // first round, not the next round of an ongoing match — pips must go back to 0
@@ -313,6 +360,9 @@ ws.onmessage = (e) => {
             renderPips(document.getElementById("their-pips"), 0);
             resetStreakBadge();   // a new match's streak starts clean, not carried over from the last one
         }
+        clearInterval(matchStartInterval);   // in case the real question ever beats our local countdown to zero
+        matchStartInterval = null;
+        hideMatchStartScreen();
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
         document.getElementById("question").textContent = msg.text;
@@ -380,6 +430,9 @@ ws.onmessage = (e) => {
         setWaiting(false);   // in case they bailed before the match even started
         hideConnectionStatus();
         stopOpponentGraceCountdown();
+        clearInterval(matchStartInterval);
+        matchStartInterval = null;
+        hideMatchStartScreen();
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";
