@@ -98,6 +98,8 @@
     #answer.shake, #room.shake, #solo-answer.shake { animation: none; }   /* red border still shows — just no physical shake */
     button { transition: none; }
     .ms-count { animation: none; }
+    #emote-toast.show { animation: none; }
+    #streak-badge.hot { animation: pop 0.25s ease-out; }
   }
 
   /* --- brand header --- */
@@ -458,6 +460,52 @@
     gap: 0.5rem;
     margin-bottom: 2rem;
   }
+
+  /* --- quick reactions: cheap personality for a 1v1 with no voice/text chat —
+     a fixed emoji set (never free text, see ALLOWED_EMOTES) relayed straight
+     to the other player, shown as a transient pop rather than a persistent log --- */
+  #emote-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.2rem;
+  }
+  .emote-btn {
+    width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+    font-size: 1.1rem;
+    background: var(--panel);
+    border: 1.5px solid var(--edge);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  }
+  .emote-btn:hover { border-color: #4d5b8e; background: rgba(255, 255, 255, 0.05); }
+  .emote-btn:active { transform: scale(0.88); }
+
+  #emote-toast {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--soft);
+    margin-bottom: 0.6rem;
+    padding: 0.35rem 0.9rem;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+  }
+  #emote-toast.show {
+    display: flex;
+    animation: emote-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  #emote-toast .emote-glyph { font-size: 1.3rem; }
+  @keyframes emote-pop {
+    from { opacity: 0; transform: scale(0.6) translateY(6px); }
+  }
   .chip {
     font-size: 0.75rem;
     letter-spacing: 0.12em;
@@ -545,6 +593,19 @@
   #streak-badge.show { display: flex; }
   #streak-badge.you  { color: var(--blue); border-color: rgba(0, 176, 255, 0.4); }
   #streak-badge.them { color: var(--red);  border-color: rgba(255, 82, 82, 0.4); }
+  /* 3+ in a row escalates from "noted" to "on fire" — solid fill instead of
+     outline, and a slow pulsing glow instead of the one-shot pop alone */
+  #streak-badge.hot {
+    font-size: 0.95rem;
+    padding: 0.45rem 1.15rem;
+    animation: pop 0.25s ease-out, hot-glow 1.4s ease-in-out infinite alternate;
+  }
+  #streak-badge.hot.you  { background: rgba(0, 176, 255, 0.16); }
+  #streak-badge.hot.them { background: rgba(255, 82, 82, 0.14); }
+  @keyframes hot-glow {
+    from { box-shadow: 0 0 0 rgba(255, 133, 0, 0); }
+    to   { box-shadow: 0 0 14px rgba(255, 133, 0, 0.45); }
+  }
 
   #postgame-actions, #solo-actions {
     display: none;

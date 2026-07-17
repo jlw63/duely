@@ -379,11 +379,14 @@ ws.onmessage = (e) => {
         resolveSubmissionWatch(iWon);
         updateStreak(msg.winner);
     }
+    if (msg.type === "emote") {
+        showEmoteToast(msg.emoji, false);
+    }
     if (msg.type === "game_over") {
         updateScore(msg.scores);
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";  // nothing left to answer
-        document.getElementById("streak-badge").classList.remove("show");  // final-score is the story now, not the streak
+        document.getElementById("streak-badge").classList.remove("show", "hot");  // final-score is the story now, not the streak
         // clearPostgameState() runs FIRST — it resets score/final-score to their
         // "live play" defaults (pips shown), so the postgame overrides below must
         // come AFTER it, or clearPostgameState undoes them the instant they're set
@@ -507,6 +510,34 @@ function theirLabel() {
     return opponentName || "them";
 }
 
+// --- quick reactions: a fixed emoji set relayed to the OTHER player only
+// (the server never echoes a click back to its own sender) — shown as a
+// transient pop, not a persistent chat log, since it's flavor, not content ---
+let emoteToastTimer = null;
+
+function showEmoteToast(emoji, isMine) {
+    const toast = document.getElementById("emote-toast");
+    toast.textContent = (isMine ? "you " : theirLabel() + " ") ;
+    const glyph = document.createElement("span");
+    glyph.className = "emote-glyph";
+    glyph.textContent = emoji;
+    toast.append(glyph);
+    toast.classList.remove("show");
+    void toast.offsetWidth;   // reflow trick: replays the pop on back-to-back reactions
+    toast.classList.add("show");
+    clearTimeout(emoteToastTimer);
+    emoteToastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+}
+
+document.querySelectorAll(".emote-btn").forEach((btn) => {
+    btn.onclick = () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        const emoji = btn.dataset.emoji;
+        ws.send(JSON.stringify({ type: "emote", emoji }));
+        showEmoteToast(emoji, true);   // shown locally too — a click should never feel like it did nothing
+    };
+});
+
 // --- score pips: one per side, you=cyan, them=coral ---
 // how many is the room's own choice (3/5/10) — learned from "welcome", not hardcoded
 let winTarget = 5;
@@ -559,9 +590,14 @@ function updateStreak(winnerName) {
         return;
     }
     const iAmStreaking = streakName === me;
-    badge.textContent = (iAmStreaking ? "you're" : theirLabel() + " is") + " on a " + streakCount + "-streak \u{1F525}";
+    const isHot = streakCount >= 3;
+    // flames scale with the streak (capped at 3) — the badge itself escalates
+    // from outline to filled+glowing via the "hot" class at the same threshold
+    const flames = "\u{1F525}".repeat(Math.min(streakCount - 1, 3));
+    badge.textContent = (iAmStreaking ? "you're" : theirLabel() + " is") + " on a " + streakCount + "-streak " + flames;
     badge.classList.remove("you", "them");
     badge.classList.add(iAmStreaking ? "you" : "them");
+    badge.classList.toggle("hot", isHot);
     badge.classList.remove("show");
     void badge.offsetWidth;   // reflow trick: replays the pop animation on every extension, not just the first
     badge.classList.add("show");
@@ -570,7 +606,7 @@ function updateStreak(winnerName) {
 function resetStreakBadge() {
     streakName = null;
     streakCount = 0;
-    document.getElementById("streak-badge").classList.remove("show");
+    document.getElementById("streak-badge").classList.remove("show", "hot");
 }
 
 let selectedDifficulty = "medium";

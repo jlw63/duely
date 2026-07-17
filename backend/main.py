@@ -10,6 +10,7 @@ DEFAULT_TARGET = 5
 VALID_TARGETS = {3, 5, 10, 15, 30}   # an allow-list, not "any number a client sends" — never trust the client
 GRACE_SECONDS = 20   # a dropped wifi signal shouldn't instantly end someone's match
 MAX_NAME_LEN = 16
+ALLOWED_EMOTES = {"👋", "😂", "😤", "🔥", "💀"}   # a fixed set, not free text — same never-trust-the-client rule as ops/difficulty
 
 app = FastAPI()
 
@@ -297,6 +298,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 else:
                     # one side is waiting on the other
                     await manager.broadcast(room_code, {"type": "rematch_pending", "name": name})
+
+            if (data.get("type") == "emote"
+                    and room_code in games
+                    and data.get("emoji") in ALLOWED_EMOTES):
+                # a pure relay, no game-state effect — only the OTHER player needs
+                # it, echoing it back to the sender would just double up their own click
+                sender = games[room_code]["players"].get(websocket)
+                if sender:
+                    await manager.broadcast_except(room_code, {"type": "emote", "emoji": data["emoji"],
+                                                                "from": sender}, websocket)
 
     except WebSocketDisconnect:
         name = games.get(room_code, {}).get("players", {}).pop(websocket, None)
