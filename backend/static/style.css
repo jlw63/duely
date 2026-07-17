@@ -196,16 +196,26 @@
     align-items: center;
     gap: 0.5rem;
   }
+  /* an actual chip (border + fill), not plain text — at rest it needs to read
+     as a CONTROL, not a section heading like "have a code?" above the join
+     box, which happens to sit at a similar size/weight right below it */
   #settings-toggle {
-    background: none;
-    border: none;
+    background: var(--panel);
     color: var(--soft);
-    font-size: 0.85rem;
+    border: 1.5px solid var(--edge);
+    border-radius: 999px;
+    font-size: 0.8rem;
     font-weight: 600;
-    padding: 0.2rem 0.4rem;
+    letter-spacing: 0.04em;
+    padding: 0.35rem 0.9rem;
   }
-  #settings-toggle:hover { background: none; color: var(--text); }
+  #settings-toggle:hover { background: rgba(255,255,255,0.05); color: var(--text); border-color: #4d5b8e; }
   #settings-toggle:active { transform: none; }
+  #settings-toggle[aria-expanded="true"] {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: rgba(0, 176, 255, 0.1);
+  }
   .chevron { display: inline-block; font-size: 0.8em; }
 
   /* each setting is its own labeled group: label above, centered, chips
@@ -315,6 +325,10 @@
     margin: 0.2rem 0 0;
     font-weight: 600;
   }
+  /* extra air above — without it, the settings trigger and this eyebrow sit
+     at near-identical rhythm/size and the trigger reads as a second heading
+     rather than a collapsed control */
+  .join-divider { margin-top: 0.8rem; }
 
   /* input + button fused into one pill group */
   .pill-group {
@@ -834,19 +848,27 @@
     letter-spacing: 0.08em;
   }
   #room { text-transform: uppercase; }
-  /* quiet and optional — shouldn't compete with the CTA below it, or with the
-     room-code box's bold "this box matters" styling (that one's necessary
-     to join a match; this one's a nice-to-have and should read as such) */
+  /* quiet and optional, now living inside "match settings" rather than
+     sitting above the CTA — borderless + underline, not a boxed field, so it
+     reads as the least-important control on the whole card, not a twin of
+     the room-code box (which actually gates joining a match) */
   #player-name {
-    width: 14rem;
-    font-size: 0.95rem;
+    width: 12rem;
+    font-size: 0.9rem;
     font-weight: 500;
-    padding: 0.45rem 0.9rem;
-    text-align: left;
-    border-width: 1.5px;
-    border-color: var(--edge);
+    padding: 0.3rem 0.1rem;
+    text-align: center;
+    background: none;
+    border: none;
+    border-bottom: 1.5px solid var(--edge);
+    border-radius: 0;
   }
-  #player-name::placeholder { font-size: 0.9rem; letter-spacing: 0.02em; }
+  #player-name:focus { border-bottom-color: var(--blue); }
+  /* the room-code box's placeholder reads ALL CAPS because ITS typed value is
+     forced uppercase too (real codes) — a name shouldn't be shouted back at
+     you as you type it, so only the placeholder borrows that same system
+     voice, not the input's actual value */
+  #player-name::placeholder { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.78rem; }
   input:focus {
     outline: none;
     border-color: var(--blue);
