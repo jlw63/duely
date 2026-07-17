@@ -465,16 +465,6 @@
     border-color: var(--red);
     background: rgba(255, 82, 82, 0.1);
   }
-  /* testing-only control (localhost only, see app.js) — amber, not the
-     cyan/coral duel palette, so it never reads as a real gameplay action */
-  #debug-disconnect {
-    color: #e0a020;
-    border-color: rgba(224, 160, 32, 0.4);
-  }
-  #debug-disconnect:hover {
-    border-color: #e0a020;
-    background: rgba(224, 160, 32, 0.1);
-  }
   #again {
     /* visibility is controlled by its parent #postgame-actions, not its own display —
        a button toggling its own inline style would fight the container for control.
@@ -519,6 +509,27 @@
   #fastest .stat-value { font-weight: 700; }
   #fastest .stat-value.you  { color: var(--blue); }
   #fastest .stat-value.them { color: var(--red); }
+
+  /* live-play only (see #fastest, its postgame equivalent): shows once EITHER
+     side takes 2+ rounds in a row, same "on hold" pattern as the fastest-time
+     pill — a labeled chip, not a bare number, so whose streak it is reads at
+     a glance from the color alone */
+  #streak-badge {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    margin: -0.4rem 0 0.9rem;
+    padding: 0.4rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    animation: pop 0.25s ease-out;   /* same "just happened" pop the pips use */
+  }
+  #streak-badge.show { display: flex; }
+  #streak-badge.you  { color: var(--blue); border-color: rgba(0, 176, 255, 0.4); }
+  #streak-badge.them { color: var(--red);  border-color: rgba(255, 82, 82, 0.4); }
 
   #postgame-actions, #solo-actions {
     display: none;

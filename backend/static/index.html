@@ -130,7 +130,6 @@
   <div id="meta">
     <span class="chip" id="room-chip"></span>
     <span class="chip" id="me-chip">connecting...</span>
-    <button class="chip" id="debug-disconnect" style="display:none;" title="testing only: force-closes YOUR OWN socket, simulating a real drop">simulate drop</button>
     <button class="chip" id="leave">&#8592; leave</button>
   </div>
   <div id="wait">
@@ -155,6 +154,7 @@
     <span class="vs">vs</span>
     <div class="side them"><div class="pips" id="their-pips"></div><span class="side-label">them</span></div>
   </div>
+  <div id="streak-badge" aria-live="polite"></div>
   <div id="final-score" aria-hidden="true">
     <span class="fs-num you" id="fs-you">0</span><span class="fs-dash">&ndash;</span><span class="fs-num them" id="fs-them">0</span>
   </div>

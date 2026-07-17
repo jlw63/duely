@@ -291,6 +291,7 @@ ws.onmessage = (e) => {
         if (isRematchStart) {
             renderPips(document.getElementById("my-pips"), 0);
             renderPips(document.getElementById("their-pips"), 0);
+            resetStreakBadge();   // a new match's streak starts clean, not carried over from the last one
         }
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
@@ -306,11 +307,13 @@ ws.onmessage = (e) => {
         const iWon = msg.winner === me;
         flashRound(iWon);
         resolveSubmissionWatch(iWon);
+        updateStreak(msg.winner);
     }
     if (msg.type === "game_over") {
         updateScore(msg.scores);
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";  // nothing left to answer
+        document.getElementById("streak-badge").classList.remove("show");  // final-score is the story now, not the streak
         // clearPostgameState() runs FIRST — it resets score/final-score to their
         // "live play" defaults (pips shown), so the postgame overrides below must
         // come AFTER it, or clearPostgameState undoes them the instant they're set
@@ -419,6 +422,7 @@ function joinRoom(room, difficulty, target, ops) {
     document.body.classList.add("playing");   // header steps aside
     renderPips(document.getElementById("my-pips"), 0);
     renderPips(document.getElementById("their-pips"), 0);
+    resetStreakBadge();
     setWaiting(true);
 }
 
@@ -452,6 +456,40 @@ function flashRound(iWon) {
     q.classList.remove("flash-you", "flash-them");
     void q.offsetWidth;   // reflow trick: lets the same animation restart back-to-back
     q.classList.add(iWon ? "flash-you" : "flash-them");
+}
+
+// --- duel streak: consecutive rounds taken by the SAME side, tracked purely
+// client-side from "result" messages — cosmetic feedback only, mirrors solo's
+// "current run" callout without touching the actual scoring/win condition,
+// so it can't tilt a competitive 1v1 the way a real bonus would ---
+let streakName = null;
+let streakCount = 0;
+
+function updateStreak(winnerName) {
+    if (winnerName === streakName) {
+        streakCount += 1;
+    } else {
+        streakName = winnerName;
+        streakCount = 1;
+    }
+    const badge = document.getElementById("streak-badge");
+    if (streakCount < 2) {   // one round doesn't make a streak — needs a back-to-back to mean anything
+        badge.classList.remove("show");
+        return;
+    }
+    const iAmStreaking = streakName === me;
+    badge.textContent = (iAmStreaking ? "you're" : "they're") + " on a " + streakCount + "-streak \u{1F525}";
+    badge.classList.remove("you", "them");
+    badge.classList.add(iAmStreaking ? "you" : "them");
+    badge.classList.remove("show");
+    void badge.offsetWidth;   // reflow trick: replays the pop animation on every extension, not just the first
+    badge.classList.add("show");
+}
+
+function resetStreakBadge() {
+    streakName = null;
+    streakCount = 0;
+    document.getElementById("streak-badge").classList.remove("show");
 }
 
 let selectedDifficulty = "medium";
@@ -737,16 +775,6 @@ document.getElementById("copy").onclick = () => {
     btn.textContent = "copied ✓";
     setTimeout(() => { btn.textContent = "copy invite link"; }, 1500);
 };
-
-// testing-only: lets a dev simulate a real dropped connection (server sees an
-// actual WebSocketDisconnect, unlike DevTools' "Offline" throttling, which
-// leaves an already-open socket alive and never actually fires it) without
-// needing a second device or fighting DevTools' network panel
-if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-    const debugBtn = document.getElementById("debug-disconnect");
-    debugBtn.style.display = "inline-block";
-    debugBtn.onclick = () => { if (ws) ws.close(); };
-}
 
 document.getElementById("leave").onclick = leaveRoom;
 document.getElementById("again").onclick = leaveRoom;
