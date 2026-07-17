@@ -9,8 +9,28 @@ from fastapi.staticfiles import StaticFiles
 DEFAULT_TARGET = 5
 VALID_TARGETS = {3, 5, 10, 15, 30}   # an allow-list, not "any number a client sends" — never trust the client
 GRACE_SECONDS = 20   # a dropped wifi signal shouldn't instantly end someone's match
+MAX_NAME_LEN = 16
 
 app = FastAPI()
+
+
+def clean_name(raw, fallback):
+    # strip is the only real sanitizing needed — names are only ever displayed
+    # via the client's textContent, never innerHTML, so no HTML-escaping to do here
+    name = (raw or "").strip()[:MAX_NAME_LEN]
+    return name or fallback
+
+
+def dedupe_name(name, taken):
+    # two players picking the same name would collide as the SAME key in
+    # scores/players — a second "player1" would silently merge into the first
+    # player's score entry instead of getting their own
+    if name not in taken:
+        return name
+    n = 2
+    while f"{name} ({n})" in taken:
+        n += 1
+    return f"{name} ({n})"
 
 @app.get("/health")
 def health():
@@ -115,7 +135,11 @@ async def start_round(room_code):
     games[room_code]["answer"] = answer
     games[room_code]["question_text"] = text   # so a reconnecting player can be resent the LIVE question, not just told a round exists
     games[room_code]["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
-    await manager.broadcast(room_code, {"type": "question", "text": text})
+    # scores riding along here (not just on "result"/"game_over") is how a client
+    # learns its OPPONENT's real display name — scores is name-keyed, so whichever
+    # key isn't "me" IS the opponent, from the very first round, not just after
+    # the first point is scored
+    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": games[room_code]["scores"]})
 
 
 async def expire_disconnect(room_code, name):
@@ -130,7 +154,7 @@ async def expire_disconnect(room_code, name):
 
 @app.websocket("/ws/{room_code}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium",
-                              target: int = DEFAULT_TARGET, ops: str = "add,sub"):
+                              target: int = DEFAULT_TARGET, ops: str = "add,sub", display_name: str = ""):
     # FastAPI reads ?difficulty=...&target=...&ops=... straight off the URL into
     # these parameters (ops arrives as one comma-separated string — repeated
     # query keys would need the pretty +/×/÷/% symbols URL-escaped, so the
@@ -163,7 +187,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                              "target": target if target in VALID_TARGETS else DEFAULT_TARGET,
                              "ops": requested_ops or DEFAULT_OPS}
         for i, sock in enumerate(manager.rooms[room_code], start=1):
-            name = f"player{i}"
+            # only THIS request's own connection has a real chosen name available —
+            # any other socket here is a rare previous-match survivor (see comment
+            # above) whose own name was known only to ITS OWN original request
+            if sock is websocket:
+                name = dedupe_name(clean_name(display_name, f"player{i}"), games[room_code]["scores"])
+            else:
+                name = f"player{i}"
             games[room_code]["players"][sock] = name
             games[room_code]["scores"][name] = 0
             await sock.send_json({"type": "welcome", "name": name, "target": games[room_code]["target"]})
@@ -198,7 +228,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 await websocket.send_json({"type": "question", "text": games[room_code]["question_text"]})
         else:
             # game already exists — this is a normal second player joining
-            player_name = f"player{len(manager.rooms[room_code])}"
+            fallback = f"player{len(manager.rooms[room_code])}"
+            player_name = dedupe_name(clean_name(display_name, fallback), games[room_code]["scores"])
             games[room_code]["players"][websocket] = player_name
             games[room_code]["scores"][player_name] = 0
             await websocket.send_json({"type": "welcome", "name": player_name, "target": games[room_code]["target"]})

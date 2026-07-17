@@ -834,6 +834,19 @@
     letter-spacing: 0.08em;
   }
   #room { text-transform: uppercase; }
+  /* quiet and optional — shouldn't compete with the CTA below it, or with the
+     room-code box's bold "this box matters" styling (that one's necessary
+     to join a match; this one's a nice-to-have and should read as such) */
+  #player-name {
+    width: 14rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 0.45rem 0.9rem;
+    text-align: left;
+    border-width: 1.5px;
+    border-color: var(--edge);
+  }
+  #player-name::placeholder { font-size: 0.9rem; letter-spacing: 0.02em; }
   input:focus {
     outline: none;
     border-color: var(--blue);

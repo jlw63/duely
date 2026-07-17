@@ -1,7 +1,17 @@
 let ws = null;    // no connection yet — born when a room is joined
     let me = null;
+    let opponentName = null;   // learned passively from scores — see ws.onmessage
     let currentRoom = null;
     let leaving = false;   // true while WE chose to close, so onclose stays quiet
+
+// --- display name: optional, remembered across visits. Blank means "let the
+// server assign player1/player2" — nobody's forced to pick a name to play. ---
+function getPlayerName() {
+    return (localStorage.getItem("duely-name") || "").trim().slice(0, 16);
+}
+function setPlayerName(name) {
+    localStorage.setItem("duely-name", name.trim().slice(0, 16));
+}
 
 // --- sound: short tones synthesized on the fly, no audio files needed ---
 // remembered across visits — nobody wants to re-mute every time they reload
@@ -261,12 +271,15 @@ function buildSocket(room, difficulty, target, ops) {
     }
     leaving = false;
     // difficulty/target/ops only matter to whoever CREATES the room — the server
-    // stores them once and every later joiner (typed code, invite link) just inherits them
+    // stores them once and every later joiner (typed code, invite link) just inherits them.
+    // display_name is different: it's per-PLAYER, sent by everyone, every time.
     let url = proto + "//" + location.host + "/ws/" + room;
     const params = [];
     if (difficulty) { params.push("difficulty=" + difficulty); }
     if (target) { params.push("target=" + target); }
     if (ops) { params.push("ops=" + ops); }
+    const displayName = getPlayerName();
+    if (displayName) { params.push("display_name=" + encodeURIComponent(displayName)); }
     if (params.length) { url += "?" + params.join("&"); }
     ws = new WebSocket(url);
 
@@ -284,6 +297,13 @@ function buildSocket(room, difficulty, target, ops) {
 ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     console.log("got:", msg);
+    // scores is name-keyed and rides along on "question"/"result"/"game_over"/
+    // a reconnect "welcome" — whichever key isn't "me" IS the opponent's real
+    // chosen display name, learned passively rather than needing its own message
+    if (msg.scores) {
+        const other = Object.keys(msg.scores).find((n) => n !== me);
+        if (other) { opponentName = other; }
+    }
     if (msg.type === "question") {
         // a "question" after postgame-actions was showing means this is a rematch's
         // first round, not the next round of an ongoing match — pips must go back to 0
@@ -343,12 +363,12 @@ ws.onmessage = (e) => {
     if (msg.type === "rematch_pending") {
         const isMe = msg.name === me;
         if (isMe) {
-            setPostgameStatus("waiting for them…");
+            setPostgameStatus("waiting for " + theirLabel() + "…");
             const rematchBtn = document.getElementById("rematch");
             rematchBtn.disabled = true;
             rematchBtn.textContent = "waiting…";
         } else {
-            setPostgameStatus("them wants a rematch");
+            setPostgameStatus(theirLabel() + " wants a rematch");
             const rematchBtn = document.getElementById("rematch");
             if (!rematchRequested) {
                 rematchBtn.disabled = false;
@@ -423,7 +443,15 @@ function joinRoom(room, difficulty, target, ops) {
     renderPips(document.getElementById("my-pips"), 0);
     renderPips(document.getElementById("their-pips"), 0);
     resetStreakBadge();
+    opponentName = null;
     setWaiting(true);
+}
+
+// "them" was fine when nobody had names, but once real ones exist, showing
+// the actual person is worth the extra glance — falls back to "them" until
+// their name's been learned (see the msg.scores handling above)
+function theirLabel() {
+    return opponentName || "them";
 }
 
 // --- score pips: one per side, you=cyan, them=coral ---
@@ -478,7 +506,7 @@ function updateStreak(winnerName) {
         return;
     }
     const iAmStreaking = streakName === me;
-    badge.textContent = (iAmStreaking ? "you're" : "they're") + " on a " + streakCount + "-streak \u{1F525}";
+    badge.textContent = (iAmStreaking ? "you're" : theirLabel() + " is") + " on a " + streakCount + "-streak \u{1F525}";
     badge.classList.remove("you", "them");
     badge.classList.add(iAmStreaking ? "you" : "them");
     badge.classList.remove("show");
@@ -784,11 +812,15 @@ document.getElementById("rematch").onclick = () => {
     const rematchBtn = document.getElementById("rematch");
     rematchBtn.disabled = true;
     rematchBtn.textContent = "waiting…";
-    setPostgameStatus("waiting for them…");
+    setPostgameStatus("waiting for " + theirLabel() + "…");
     ws.send(JSON.stringify({ type: "rematch" }));
 };
 document.getElementById("create").onclick = createDuel;
 document.getElementById("join").onclick = joinTyped;
+
+const nameInput = document.getElementById("player-name");
+nameInput.value = getPlayerName();
+nameInput.addEventListener("input", () => setPlayerName(nameInput.value));
 
 // settings stay collapsed by default — most visitors keep the defaults and
 // only need this open when they specifically want to change something
@@ -909,9 +941,16 @@ function setPostgameStatus(text) {
 function buildFastestStat(fastest) {
     const stat = document.getElementById("fastest");
     const whoIsMe = fastest.name === me;
-    stat.innerHTML = '<span class="stat-label">fastest answer</span>'
-        + '<span class="stat-value ' + (whoIsMe ? "you" : "them") + '">'
-        + (whoIsMe ? "you" : "them") + ' &middot; ' + fastest.time + 's</span>';
+    // built with textContent, not innerHTML — fastest.name traces back to
+    // whatever display name the OTHER player typed, so it's untrusted text
+    stat.innerHTML = "";
+    const label = document.createElement("span");
+    label.className = "stat-label";
+    label.textContent = "fastest answer";
+    const value = document.createElement("span");
+    value.className = "stat-value " + (whoIsMe ? "you" : "them");
+    value.textContent = (whoIsMe ? "you" : theirLabel()) + " · " + fastest.time + "s";
+    stat.append(label, value);
     stat.classList.add("show");
 }
 
