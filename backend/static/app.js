@@ -115,6 +115,10 @@ function playLose() {   // two descending, buzzy notes
     playTone(300, 0,    0.22, "sawtooth", 0.1);
     playTone(220, 0.18, 0.32, "sawtooth", 0.1);
 }
+function playDeathmatch() {   // a two-blast klaxon — the decider's tension, not the win/lose fanfare
+    playTone(440, 0,    0.16, "sawtooth", 0.14);
+    playTone(440, 0.22, 0.16, "sawtooth", 0.14);
+}
 function playWrong() {   // a flat little buzz for a miss on the input itself
     playTone(160, 0, 0.14, "square", 0.08);
 }
@@ -354,6 +358,17 @@ ws.onmessage = (e) => {
     if (msg.type === "match_start") {
         startMatchStartCountdown(msg.names);
     }
+    if (msg.type === "deathmatch") {
+        // presentation only — the server already decided the NEXT question is a
+        // decider; this is just the couple-second beat announcing it feels that way
+        document.body.classList.add("deathmatch");
+        document.getElementById("pulse").style.display = "none";
+        document.getElementById("controls").style.display = "none";
+        const q = document.getElementById("question");
+        q.textContent = "DEATHMATCH";
+        q.classList.add("deathmatch-text");
+        playDeathmatch();
+    }
     if (msg.type === "question") {
         // a "question" after postgame-actions was showing means this is a rematch's
         // first round, not the next round of an ongoing match — pips must go back to 0
@@ -366,6 +381,8 @@ ws.onmessage = (e) => {
         clearInterval(matchStartInterval);   // in case the real question ever beats our local countdown to zero
         matchStartInterval = null;
         hideMatchStartScreen();
+        document.body.classList.remove("deathmatch");   // the decider's live now — the beat's over, the glow/shake should be too
+        document.getElementById("question").classList.remove("deathmatch-text");
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
         document.getElementById("question").textContent = msg.text;
@@ -440,6 +457,8 @@ ws.onmessage = (e) => {
         clearInterval(matchStartInterval);
         matchStartInterval = null;
         hideMatchStartScreen();
+        document.body.classList.remove("deathmatch");
+        document.getElementById("question").classList.remove("deathmatch-text");
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";

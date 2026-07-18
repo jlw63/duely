@@ -156,6 +156,23 @@ async def announce_and_start(room_code):
         await start_round(room_code)
 
 
+DEATHMATCH_ANNOUNCE_SECONDS = 2   # shorter than ANNOUNCE_SECONDS — this is mid-match tension,
+                                  # not a fresh-match intro, so it shouldn't slow the pace down much
+
+async def start_next_round(room_code):
+    # presentation only — a "DEATHMATCH" beat when both sides are tied one
+    # point from winning. Doesn't touch scoring/target/win condition at all,
+    # so it can't tilt the actual match, only how the decider FEELS.
+    target = games[room_code]["target"]
+    scores = games[room_code]["scores"].values()
+    is_deathmatch = target > 1 and all(s == target - 1 for s in scores)
+    if is_deathmatch:
+        await manager.broadcast(room_code, {"type": "deathmatch"})
+        await asyncio.sleep(DEATHMATCH_ANNOUNCE_SECONDS)
+    if room_code in games:   # the room could've been abandoned mid-announce
+        await start_round(room_code)
+
+
 async def expire_disconnect(room_code, name):
     await asyncio.sleep(GRACE_SECONDS)
     game = games.get(room_code)
@@ -280,7 +297,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                                                         "fastest": games[room_code]["fastest"]})
                     games [room_code]["answer"] = None  # Reset the answer to None to indicate the game is over
                 else:
-                    await start_round(room_code)
+                    await start_next_round(room_code)
 
             if (data.get("type") == "rematch"
                     and room_code in games):

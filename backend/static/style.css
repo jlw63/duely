@@ -65,6 +65,17 @@
     opacity: 1;   /* subtler than a win — coral gets to have the moment, quietly */
     background: radial-gradient(ellipse 60% 50% at 50% 38%, rgba(255, 82, 82, 0.09), transparent 70%);
   }
+  /* both sides tied one point from winning — a brief, pulsing gold/red beat
+     before the decider, presentation only (see start_next_round in main.py) */
+  body.deathmatch #glow {
+    opacity: 1;
+    background: radial-gradient(ellipse 70% 55% at 50% 42%, rgba(255, 82, 82, 0.22), transparent 72%);
+    animation: deathmatch-glow 0.6s ease-in-out infinite alternate;
+  }
+  @keyframes deathmatch-glow {
+    from { opacity: 0.55; }
+    to   { opacity: 1; }
+  }
 
   /* --- ambient background triangles, drifting toward the face-off --- */
   .bg-tri {
@@ -101,6 +112,7 @@
     .emote-toast.show { animation: none; }
     .emote-btn { animation: none; }
     #streak-badge.show { animation: none; }
+    body.deathmatch #glow { animation: none; opacity: 0.85; }
   }
 
   /* --- brand header --- */
@@ -780,6 +792,21 @@
   }
   @keyframes result-pop {
     from { opacity: 0; transform: scale(0.85) translateY(8px); }
+  }
+  /* the brief "DEATHMATCH" stamp before a tied decider — see body.deathmatch
+     #glow above for the matching screen-wide pulse */
+  #question.deathmatch-text {
+    color: var(--red);
+    text-shadow: 0 0 24px rgba(255, 82, 82, 0.5);
+    animation: deathmatch-shake 0.35s ease-in-out 2;
+  }
+  @keyframes deathmatch-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #question.deathmatch-text { animation: none; }
   }
 
   /* --- the final score: legible across the room, not squinted at as pips --- */
