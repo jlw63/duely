@@ -98,7 +98,7 @@
     #answer.shake, #room.shake, #solo-answer.shake { animation: none; }   /* red border still shows — just no physical shake */
     button { transition: none; }
     .ms-count { animation: none; }
-    #emote-toast.show { animation: none; }
+    .emote-toast.show { animation: none; }
     .emote-btn { animation: none; }
     #streak-badge.show { animation: none; }
   }
@@ -464,40 +464,21 @@
 
   /* --- quick reactions: cheap personality for a 1v1 with no voice/text chat —
      a fixed emoji set (never free text, see ALLOWED_EMOTES) relayed straight
-     to the other player. Collapsed behind ONE toggle, docked in a corner —
-     five always-visible buttons sat in the pips-to-input answer path and
-     gave taunting equal billing with actually answering; a single trigger
-     that fans out on demand doesn't cost anything until you reach for it. --- */
+     to the other player. All five always available, no toggle to open first —
+     one tap, no extra step, mid-match. --- */
   #emote-dock {
     position: fixed;
-    left: 1.2rem;
-    bottom: 1.2rem;
+    left: 50%;
+    bottom: 25%;   /* clear of the very bottom edge, ~75% down the viewport */
+    transform: translateX(-50%);
     z-index: 15;
     display: flex;
-    flex-direction: column-reverse;   /* toggle anchors the bottom; the fan-out grows upward from it */
-    align-items: center;
-    gap: 0.6rem;
   }
-  #emote-toggle {
-    width: 2.75rem;
-    height: 2.75rem;
-    padding: 0;
-    font-size: 1.3rem;
-    background: var(--panel);
-    border: 1.5px solid var(--edge);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #emote-toggle:hover { border-color: #4d5b8e; }
-  #emote-toggle[aria-expanded="true"] { border-color: var(--blue); color: var(--blue); }
   #emote-bar {
-    display: none;
-    flex-direction: column;
+    display: flex;
+    flex-direction: row;   /* spreads left-right below the answer, not stacked vertically */
     gap: 0.55rem;
   }
-  #emote-bar.show { display: flex; }
   .emote-btn {
     width: 2.75rem;    /* 44px — a mid-match panic-tap target, not a decorative dot */
     height: 2.75rem;
@@ -515,33 +496,52 @@
   .emote-btn:hover { border-color: #4d5b8e; background: rgba(255, 255, 255, 0.05); }
   .emote-btn:active { transform: scale(0.88); }
 
-  /* anchored to something YOU actually own — above the answer input, not
-     floating at the viewport edge (which reads as a rendering glitch, and
-     on an ultrawide screen is nowhere near the centered play column).
-     Docked to #controls rather than #score/pips: #score's own margin-bottom
-     (2.5rem) is the only headroom available there, and #streak-badge already
-     spends some of it (-2.1rem) — stacking a second absolute element in that
-     same cramped gap risked poking up into the question/pulse row above it.
-     #controls sits further down with its own clear gap above, so the two
-     can never collide regardless of what else is happening on screen. */
-  #emote-toast {
+  /* anchored to something YOU actually own — one toast LIVES inside each
+     .side, so it's grid-locked to the exact column it belongs to (not a
+     guessed pixel offset). Docked OUT TO THE SIDE (left of "you", right of
+     "them") rather than stacked above the pips — sitting above them put the
+     tail/bubble right on top of the dots; sitting beside them can't collide
+     with anything below at all. A small tail/notch bridges the gap so the
+     connection reads as deliberate, not coincidental. */
+  .side { position: relative; }
+  .emote-toast {
     display: none;
     position: absolute;
-    top: -2.5rem;
+    top: 50%;
+    transform: translateY(-50%);
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.95rem;
+    gap: 0.4rem;
+    font-size: 0.88rem;
     font-weight: 700;
-    padding: 0.4rem 0.9rem;
+    padding: 0.35rem 0.8rem;
     background: var(--panel);
     border: 1.5px solid var(--edge);
     border-radius: 999px;
     white-space: nowrap;
   }
-  #emote-toast.mine  { left: 0;  color: var(--blue); border-color: rgba(0, 176, 255, 0.5); }
-  #emote-toast.theirs { right: 0; color: var(--red);  border-color: rgba(255, 82, 82, 0.5); }
-  #emote-toast.show { display: flex; animation: pop 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-  #emote-toast .emote-glyph { font-size: 1.4rem; }
+  .emote-toast::after {   /* the tail, pointing sideways at the side it belongs to */
+    content: "";
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 6px solid transparent;
+  }
+  .emote-toast.you {
+    right: 100%;
+    margin-right: 0.6rem;
+    color: var(--blue);
+    border-color: rgba(0, 176, 255, 0.5);
+  }
+  .emote-toast.you::after { left: 100%; border-left-color: inherit; }
+  .emote-toast.them {
+    left: 100%;
+    margin-left: 0.6rem;
+    color: var(--red);
+    border-color: rgba(255, 82, 82, 0.5);
+  }
+  .emote-toast.them::after { right: 100%; border-right-color: inherit; }
+  .emote-toast.show { display: flex; animation: pop 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .emote-toast .emote-glyph { font-size: 1.3rem; }
   .chip {
     font-size: 0.75rem;
     letter-spacing: 0.12em;
@@ -942,7 +942,6 @@
     display: flex;
     gap: 0.6rem;
   }
-  #controls { position: relative; }   /* anchors #emote-toast — see its own comment */
 
   #question.winner { color: var(--blue); }
   #question.loser { color: var(--red); }

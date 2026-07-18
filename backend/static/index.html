@@ -159,9 +159,17 @@
   </div>
   <div id="pulse"><div></div></div>
   <div id="score">
-    <div class="side you"><span class="side-label" id="my-side-label">you</span><div class="pips" id="my-pips"></div></div>
+    <div class="side you">
+      <span class="side-label" id="my-side-label">you</span>
+      <div class="pips" id="my-pips"></div>
+      <div class="emote-toast you" id="emote-toast-you" aria-live="polite"></div>
+    </div>
     <span class="vs">vs</span>
-    <div class="side them"><div class="pips" id="their-pips"></div><span class="side-label" id="their-side-label">them</span></div>
+    <div class="side them">
+      <div class="pips" id="their-pips"></div>
+      <span class="side-label" id="their-side-label">them</span>
+      <div class="emote-toast them" id="emote-toast-them" aria-live="polite"></div>
+    </div>
     <div id="streak-badge" aria-live="polite"></div>
   </div>
   <div id="final-score" aria-hidden="true">
@@ -169,7 +177,6 @@
   </div>
   <div id="fastest" aria-live="polite"></div>
   <div id="emote-dock">
-    <button id="emote-toggle" aria-expanded="false" aria-controls="emote-bar" aria-label="quick reactions">&#128512;</button>
     <div id="emote-bar" role="group" aria-label="quick reactions">
       <button class="emote-btn" data-emoji="&#128075;">&#128075;</button>
       <button class="emote-btn" data-emoji="&#128514;">&#128514;</button>
@@ -179,7 +186,6 @@
     </div>
   </div>
   <div id="controls">
-    <div id="emote-toast" aria-live="polite"></div>
     <input id="answer" type="number" inputmode="numeric" placeholder="answer">
     <button id="send">go</button>
   </div>

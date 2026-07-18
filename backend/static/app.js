@@ -505,7 +505,6 @@ function joinRoom(room, difficulty, target, ops) {
     resetStreakBadge();
     opponentName = null;
     document.getElementById("their-side-label").textContent = "them";
-    setEmoteBarOpen(false);
     setWaiting(true);
 }
 
@@ -519,40 +518,35 @@ function theirLabel() {
 // --- quick reactions: a fixed emoji set relayed to the OTHER player only
 // (the server never echoes a click back to its own sender) — shown as a
 // transient pop, not a persistent chat log, since it's flavor, not content ---
-let emoteToastTimer = null;
+// two independent timers — one per side — so a reaction from each player
+// arriving close together can't have one's fade-out cancel the other's
+let emoteToastTimerYou = null;
+let emoteToastTimerThem = null;
 
 function showEmoteToast(emoji, isMine) {
-    const toast = document.getElementById("emote-toast");
+    // one toast lives inside EACH .side (see index.html) — picking the right
+    // one means it's centered over that side's own label+pips by ordinary
+    // layout, not a guessed offset that can drift off-grid
+    const toast = document.getElementById(isMine ? "emote-toast-you" : "emote-toast-them");
     toast.textContent = (isMine ? "you " : theirLabel() + " ");
     const glyph = document.createElement("span");
     glyph.className = "emote-glyph";
     glyph.textContent = emoji;
     toast.append(glyph);
-    // docked to whichever EDGE sent it — mine slides in cyan from the left,
-    // theirs slides in coral from the right, so it reads as a reaction FROM
-    // a person's side rather than a caption hovering over the question
-    toast.classList.remove("show", "mine", "theirs");
-    void toast.offsetWidth;   // reflow trick: replays the slide-in on back-to-back reactions
-    toast.classList.add("show", isMine ? "mine" : "theirs");
-    clearTimeout(emoteToastTimer);
-    emoteToastTimer = setTimeout(() => toast.classList.remove("show", "mine", "theirs"), 1800);
+    toast.classList.remove("show");
+    void toast.offsetWidth;   // reflow trick: replays the pop on back-to-back reactions
+    toast.classList.add("show");
+    if (isMine) {
+        clearTimeout(emoteToastTimerYou);
+        emoteToastTimerYou = setTimeout(() => toast.classList.remove("show"), 1800);
+    } else {
+        clearTimeout(emoteToastTimerThem);
+        emoteToastTimerThem = setTimeout(() => toast.classList.remove("show"), 1800);
+    }
 }
-
-// collapsed behind one toggle — opens the fan-out, closes again the moment
-// a reaction is actually sent, so it never lingers in the answer path
-function setEmoteBarOpen(open) {
-    document.getElementById("emote-bar").classList.toggle("show", open);
-    document.getElementById("emote-toggle").setAttribute("aria-expanded", open.toString());
-}
-
-document.getElementById("emote-toggle").onclick = () => {
-    const isOpen = document.getElementById("emote-bar").classList.contains("show");
-    setEmoteBarOpen(!isOpen);
-};
 
 document.querySelectorAll(".emote-btn").forEach((btn) => {
     btn.onclick = () => {
-        setEmoteBarOpen(false);
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         const emoji = btn.dataset.emoji;
         ws.send(JSON.stringify({ type: "emote", emoji }));
