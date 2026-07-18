@@ -396,22 +396,25 @@ ws.onmessage = (e) => {
             opponentName = other;
             document.getElementById("their-side-label").textContent = other;   // real name on THEIR pips, not a static "them" — must match the streak copy/callouts, which already use it
         }
+        // the pips ALWAYS mirror the server's scores, whatever message they
+        // arrived on — a rematch's first question (server just reset to 0-0)
+        // used to slip past this, leaving the previous match's pips on screen
+        updateScore(msg.scores);
     }
     if (msg.type === "match_start") {
+        // a match_start is a fresh match by definition — initial OR rematch —
+        // so the board resets HERE, not inferred later from what the question
+        // handler can still see of the postgame screen (that inference broke
+        // the moment this countdown started clearing the postgame state early)
+        renderPips(document.getElementById("my-pips"), 0);
+        renderPips(document.getElementById("their-pips"), 0);
+        resetStreakBadge();
         startMatchStartCountdown(msg.names);
     }
     if (msg.type === "deathmatch") {
         startDeathmatchCountdown(msg.seconds || 3);
     }
     if (msg.type === "question") {
-        // a "question" after postgame-actions was showing means this is a rematch's
-        // first round, not the next round of an ongoing match — pips must go back to 0
-        const isRematchStart = document.getElementById("postgame-actions").style.display !== "none";
-        if (isRematchStart) {
-            renderPips(document.getElementById("my-pips"), 0);
-            renderPips(document.getElementById("their-pips"), 0);
-            resetStreakBadge();   // a new match's streak starts clean, not carried over from the last one
-        }
         clearInterval(matchStartInterval);   // in case the real question ever beats our local countdown to zero
         matchStartInterval = null;
         hideMatchStartScreen();
