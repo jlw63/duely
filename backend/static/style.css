@@ -65,15 +65,15 @@
     opacity: 1;   /* subtler than a win — coral gets to have the moment, quietly */
     background: radial-gradient(ellipse 60% 50% at 50% 38%, rgba(255, 82, 82, 0.09), transparent 70%);
   }
-  /* both sides tied one point from winning — a brief, pulsing gold/red beat
-     before the decider, presentation only (see start_next_round in main.py) */
+  /* both sides tied one point from winning — a brief, pulsing red beat before
+     the decider, presentation only (see start_next_round in main.py) */
   body.deathmatch #glow {
     opacity: 1;
-    background: radial-gradient(ellipse 70% 55% at 50% 42%, rgba(255, 82, 82, 0.22), transparent 72%);
-    animation: deathmatch-glow 0.6s ease-in-out infinite alternate;
+    background: radial-gradient(ellipse 85% 70% at 50% 42%, rgba(255, 82, 82, 0.38), transparent 68%);
+    animation: deathmatch-glow 0.45s ease-in-out infinite alternate;
   }
   @keyframes deathmatch-glow {
-    from { opacity: 0.55; }
+    from { opacity: 0.4; }
     to   { opacity: 1; }
   }
 
@@ -386,7 +386,11 @@
   /* --- the lobby's entry into solo mode: quiet, secondary to "create a duel".
      no eyebrow above it anymore — it stands alone as a plain link, so it can't
      read as a twin of the "have a code?" section above it. --- */
-  #solo-link {
+  #practice-links {
+    display: flex;
+    gap: 1.2rem;
+  }
+  #solo-link, #bot-link {
     background: none;
     border: none;
     color: var(--soft);
@@ -397,8 +401,8 @@
     text-underline-offset: 3px;
     text-decoration-color: rgba(170, 176, 200, 0.4);
   }
-  #solo-link:hover { color: var(--text); background: none; }
-  #solo-link:active { transform: none; }
+  #solo-link:hover, #bot-link:hover { color: var(--text); background: none; }
+  #solo-link:active, #bot-link:active { transform: none; }
 
   /* a room already has two players — told plainly, not a silent merge */
   #lobby-error {
@@ -793,17 +797,23 @@
   @keyframes result-pop {
     from { opacity: 0; transform: scale(0.85) translateY(8px); }
   }
-  /* the brief "DEATHMATCH" stamp before a tied decider — see body.deathmatch
-     #glow above for the matching screen-wide pulse */
+  /* the brief "DEATHMATCH 3…2…1" stamp before a tied decider — replayed via
+     JS reflow trick on every countdown tick (see startDeathmatchCountdown),
+     so this single-shot punch repeats itself once a second on its own.
+     See body.deathmatch #glow above for the matching screen-wide pulse. */
   #question.deathmatch-text {
+    font-size: clamp(3.2rem, 13vw, 5.2rem);   /* bigger than a normal question — this is an EVENT */
     color: var(--red);
-    text-shadow: 0 0 24px rgba(255, 82, 82, 0.5);
-    animation: deathmatch-shake 0.35s ease-in-out 2;
+    text-shadow: 0 0 32px rgba(255, 82, 82, 0.65), 0 0 60px rgba(255, 82, 82, 0.3);
+    animation: deathmatch-shake 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
   @keyframes deathmatch-shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-6px); }
-    75% { transform: translateX(6px); }
+    0%   { transform: scale(1.35) translateX(0); opacity: 0; }
+    20%  { transform: scale(1.05) translateX(-10px); opacity: 1; }
+    40%  { transform: scale(1) translateX(8px); }
+    60%  { transform: scale(1) translateX(-5px); }
+    80%  { transform: scale(1) translateX(3px); }
+    100% { transform: scale(1) translateX(0); }
   }
   @media (prefers-reduced-motion: reduce) {
     #question.deathmatch-text { animation: none; }

@@ -11,6 +11,9 @@ VALID_TARGETS = {3, 5, 10, 15, 30}   # an allow-list, not "any number a client s
 GRACE_SECONDS = 20   # a dropped wifi signal shouldn't instantly end someone's match
 MAX_NAME_LEN = 16
 ALLOWED_EMOTES = {"👋", "😂", "😤", "🔥", "💀"}   # a fixed set, not free text — same never-trust-the-client rule as ops/difficulty
+VALID_BOT_SKILLS = {"easy", "medium", "hard"}
+BOT_NAMES = {"easy": "Rookie Bot", "medium": "Pro Bot", "hard": "Champion Bot"}
+BOT_DELAY_RANGE = {"easy": (3.0, 5.5), "medium": (1.8, 3.5), "hard": (0.8, 2.0)}   # seconds, randomized per round
 
 app = FastAPI()
 
@@ -132,15 +135,19 @@ def gen_question(difficulty, ops):
 
 
 async def start_round(room_code):
-    text, answer = gen_question(games[room_code]["difficulty"], games[room_code]["ops"])
-    games[room_code]["answer"] = answer
-    games[room_code]["question_text"] = text   # so a reconnecting player can be resent the LIVE question, not just told a round exists
-    games[room_code]["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
+    game = games[room_code]
+    text, answer = gen_question(game["difficulty"], game["ops"])
+    game["answer"] = answer
+    game["question_text"] = text   # so a reconnecting player can be resent the LIVE question, not just told a round exists
+    game["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
+    game["round_token"] += 1   # lets a stale bot-answer task (scheduled for an OLD question) recognize it's too late
     # scores riding along here (not just on "result"/"game_over") is how a client
     # learns its OPPONENT's real display name — scores is name-keyed, so whichever
     # key isn't "me" IS the opponent, from the very first round, not just after
     # the first point is scored
-    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": games[room_code]["scores"]})
+    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": game["scores"]})
+    if game["bot"]:
+        asyncio.create_task(bot_answer(room_code, game["round_token"]))
 
 
 ANNOUNCE_SECONDS = 3   # "you vs them" beat before the clock starts — also the only
@@ -156,21 +163,69 @@ async def announce_and_start(room_code):
         await start_round(room_code)
 
 
-DEATHMATCH_ANNOUNCE_SECONDS = 2   # shorter than ANNOUNCE_SECONDS — this is mid-match tension,
-                                  # not a fresh-match intro, so it shouldn't slow the pace down much
+DEATHMATCH_ANNOUNCE_SECONDS = 3   # long enough for a client-side 3-2-1 before the decider lands
+DEATHMATCH_DIFFICULTY_BUMP = {"easy": "medium", "medium": "hard", "hard": "hard"}   # one tier up, capped
 
 async def start_next_round(room_code):
-    # presentation only — a "DEATHMATCH" beat when both sides are tied one
-    # point from winning. Doesn't touch scoring/target/win condition at all,
-    # so it can't tilt the actual match, only how the decider FEELS.
+    # a "DEATHMATCH" beat when both sides are tied one point from winning.
+    # The countdown/glow/sound are pure presentation, but the question itself
+    # DOES get harder for this one round (see DEATHMATCH_DIFFICULTY_BUMP) —
+    # the win condition (first to answer) never changes, only how long that
+    # takes, so it still can't be tilted toward either player unfairly.
     target = games[room_code]["target"]
     scores = games[room_code]["scores"].values()
     is_deathmatch = target > 1 and all(s == target - 1 for s in scores)
     if is_deathmatch:
-        await manager.broadcast(room_code, {"type": "deathmatch"})
+        await manager.broadcast(room_code, {"type": "deathmatch", "seconds": DEATHMATCH_ANNOUNCE_SECONDS})
         await asyncio.sleep(DEATHMATCH_ANNOUNCE_SECONDS)
+        if room_code in games:
+            original_difficulty = games[room_code]["difficulty"]
+            games[room_code]["difficulty"] = DEATHMATCH_DIFFICULTY_BUMP.get(original_difficulty, original_difficulty)
+            await start_round(room_code)
+            games[room_code]["difficulty"] = original_difficulty   # only THIS round is harder — a rematch starts fresh
+            return
     if room_code in games:   # the room could've been abandoned mid-announce
         await start_round(room_code)
+
+
+async def record_answer(room_code, name):
+    # shared by a real player's correct answer AND the bot's simulated one —
+    # neither the scoring, streak, deathmatch-trigger, nor game-over logic
+    # needs to know or care which kind of "player" just answered.
+    game = games[room_code]
+    # invalidate the round FIRST, before any `await` below — a same-tick race
+    # (a real player answers the instant the bot's delayed task also fires)
+    # can't double-score, since nothing can interleave until the next await
+    game["answer"] = None
+    game["round_token"] += 1
+    game["scores"][name] += 1
+
+    elapsed = time.monotonic() - game["question_time"]
+    fastest = game["fastest"]
+    if fastest is None or elapsed < fastest["time"]:
+        game["fastest"] = {"name": name, "time": round(elapsed, 2)}
+
+    await manager.broadcast(room_code, {"type": "result", "winner": name,
+                                        "scores": game["scores"], "time": round(elapsed, 2)})
+    if game["scores"][name] >= game["target"]:
+        await manager.broadcast(room_code, {"type": "game_over", "winner": name,
+                                            "scores": game["scores"], "fastest": game["fastest"]})
+    else:
+        await start_next_round(room_code)
+
+
+async def bot_answer(room_code, round_token):
+    game = games.get(room_code)
+    if not game or not game["bot"]:
+        return
+    delay = random.uniform(*BOT_DELAY_RANGE[game["bot"]["skill"]])
+    await asyncio.sleep(delay)
+    game = games.get(room_code)
+    # bail if the round's already moved on (a real player beat it to the answer,
+    # or a rematch/deathmatch reset things), or the human's mid-reconnect
+    if not game or game["round_token"] != round_token or game["paused"] or game["answer"] is None:
+        return
+    await record_answer(room_code, game["bot"]["name"])
 
 
 async def expire_disconnect(room_code, name):
@@ -185,19 +240,24 @@ async def expire_disconnect(room_code, name):
 
 @app.websocket("/ws/{room_code}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium",
-                              target: int = DEFAULT_TARGET, ops: str = "add,sub", display_name: str = ""):
+                              target: int = DEFAULT_TARGET, ops: str = "add,sub", display_name: str = "",
+                              bot: str = ""):
     # FastAPI reads ?difficulty=...&target=...&ops=... straight off the URL into
     # these parameters (ops arrives as one comma-separated string — repeated
     # query keys would need the pretty +/×/÷/% symbols URL-escaped, so the
     # wire format uses plain ascii names instead: "add,sub,mul"). Only the
     # ROOM'S CREATOR's values ever matter — stored once when the room is
-    # first created, ignored from anyone who joins after.
+    # first created, ignored from anyone who joins after. `bot` is the same:
+    # only meaningful from the creator, and only on a brand-new room.
     await manager.connect(websocket, room_code)
 
     # duels are 1v1 — reject a third connection instead of silently merging
     # them into someone else's match (easy to hit: an empty join box
-    # defaults to room "DUEL" for everyone who doesn't type a code)
-    if len(manager.rooms[room_code]) > 2:
+    # defaults to room "DUEL" for everyone who doesn't type a code). A bot
+    # room only ever needs ONE real socket — the "second player" is virtual.
+    is_existing_bot_room = room_code in games and games[room_code]["bot"]
+    room_cap = 1 if is_existing_bot_room else 2
+    if len(manager.rooms[room_code]) > room_cap:
         await websocket.send_json({"type": "room_full"})
         manager.disconnect(websocket, room_code)
         await websocket.close()
@@ -216,7 +276,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                              "paused": False,   # true while someone's mid-reconnect-window — no scoring off an absent opponent
                              "difficulty": difficulty if difficulty in NUMBER_RANGE else "medium",
                              "target": target if target in VALID_TARGETS else DEFAULT_TARGET,
-                             "ops": requested_ops or DEFAULT_OPS}
+                             "ops": requested_ops or DEFAULT_OPS,
+                             "bot": None, "round_token": 0}
         for i, sock in enumerate(manager.rooms[room_code], start=1):
             # only THIS request's own connection has a real chosen name available —
             # any other socket here is a rare previous-match survivor (see comment
@@ -228,6 +289,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
             games[room_code]["players"][sock] = name
             games[room_code]["scores"][name] = 0
             await sock.send_json({"type": "welcome", "name": name, "target": games[room_code]["target"]})
+        if bot in VALID_BOT_SKILLS:
+            # the "second player" — never a real socket, just a scores/name
+            # entry the rest of the engine (rounds, streaks, deathmatch,
+            # rematch) already treats identically to a human
+            bot_name = dedupe_name(BOT_NAMES[bot], games[room_code]["scores"])
+            games[room_code]["scores"][bot_name] = 0
+            games[room_code]["bot"] = {"name": bot_name, "skill": bot}
         reconnect_name = None
     else:
         # a name is "pending disconnect" while its socket is gone but still inside
@@ -267,8 +335,10 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
 
     # only kick off the FIRST round when two players originally come together —
     # a reconnect must never generate a fresh question out from under whoever
-    # stayed connected and was mid-round
-    if len(manager.rooms[room_code]) == 2 and not reconnect_name and games[room_code]["question_time"] is None:
+    # stayed connected and was mid-round. A bot room only ever gets ONE real
+    # socket, so its "both players here" moment is just that socket connecting.
+    ready = len(manager.rooms[room_code]) == 2 or games[room_code]["bot"]
+    if ready and not reconnect_name and games[room_code]["question_time"] is None:
         await announce_and_start(room_code)
 
     try:
@@ -280,24 +350,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                     and games[room_code]["answer"] is not None  #no live round -> nothing can score
                     and data.get("value") == games[room_code]["answer"]):
                 name = games[room_code]["players"][websocket]
-                games[room_code]["scores"][name] += 1
-
-                elapsed = time.monotonic() - games[room_code]["question_time"]
-                fastest = games[room_code]["fastest"]
-                if fastest is None or elapsed < fastest["time"]:
-                    games[room_code]["fastest"] = {"name": name, "time": round(elapsed, 2)}
-
-                await manager.broadcast(room_code, {"type": "result", "winner": name,
-                                                    "scores": games[room_code]["scores"],
-                                                    "time": round(elapsed, 2)})
-                #if player reached the room's target, broadcast the result and no new round starts
-                if games[room_code]["scores"][name] >= games[room_code]["target"]:
-                    await manager.broadcast(room_code, {"type": "game_over", "winner": name,
-                                                        "scores": games[room_code]["scores"],
-                                                        "fastest": games[room_code]["fastest"]})
-                    games [room_code]["answer"] = None  # Reset the answer to None to indicate the game is over
-                else:
-                    await start_next_round(room_code)
+                await record_answer(room_code, name)
 
             if (data.get("type") == "rematch"
                     and room_code in games):

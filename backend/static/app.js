@@ -119,6 +119,9 @@ function playDeathmatch() {   // a two-blast klaxon — the decider's tension, n
     playTone(440, 0,    0.16, "sawtooth", 0.14);
     playTone(440, 0.22, 0.16, "sawtooth", 0.14);
 }
+function playDeathmatchTick() {   // a sharp short beep, one per countdown number
+    playTone(520, 0, 0.1, "square", 0.12);
+}
 function playWrong() {   // a flat little buzz for a miss on the input itself
     playTone(160, 0, 0.14, "square", 0.08);
 }
@@ -243,6 +246,42 @@ function stopOpponentGraceCountdown() {
     document.getElementById("controls").style.display = "flex";
 }
 
+let deathmatchInterval = null;
+
+// both sides tied one point from winning — a real 3-2-1-GO before the harder
+// decider question lands (see DEATHMATCH_DIFFICULTY_BUMP in main.py). The
+// countdown itself is presentation, replaying its shake/glow every tick for
+// maximum "oh no" — but the question that follows genuinely takes longer.
+function startDeathmatchCountdown(totalSeconds) {
+    document.body.classList.add("deathmatch");
+    document.getElementById("pulse").style.display = "none";
+    document.getElementById("controls").style.display = "none";
+    const q = document.getElementById("question");
+    let remaining = Math.round(totalSeconds);
+    clearInterval(deathmatchInterval);
+    playDeathmatch();   // the big two-blast klaxon, once, right as the screen goes red
+    const tick = () => {
+        q.textContent = remaining > 0 ? "DEATHMATCH " + remaining : "DEATHMATCH — GO!";
+        q.classList.remove("deathmatch-text");
+        void q.offsetWidth;   // reflow trick: replays the shake/glow animation on every tick, not just the first
+        q.classList.add("deathmatch-text");
+        if (remaining > 0) { playDeathmatchTick(); }
+    };
+    tick();
+    deathmatchInterval = setInterval(() => {
+        remaining -= 1;
+        if (remaining < -1) { clearInterval(deathmatchInterval); deathmatchInterval = null; return; }
+        tick();
+    }, 1000);
+}
+
+function stopDeathmatchCountdown() {
+    clearInterval(deathmatchInterval);
+    deathmatchInterval = null;
+    document.body.classList.remove("deathmatch");
+    document.getElementById("question").classList.remove("deathmatch-text");
+}
+
 let matchStartInterval = null;
 
 // the pre-round beat: names flanking a big pulsing countdown — this is the
@@ -304,7 +343,8 @@ function attemptReconnect() {
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(() => {
         if (performance.now() > reconnectDeadline) { giveUpReconnecting(); return; }
-        buildSocket(lastJoinParams.room, lastJoinParams.difficulty, lastJoinParams.target, lastJoinParams.ops);
+        buildSocket(lastJoinParams.room, lastJoinParams.difficulty, lastJoinParams.target,
+                    lastJoinParams.ops, lastJoinParams.bot);
     }, RECONNECT_RETRY_MS);
 }
 
@@ -312,7 +352,7 @@ function attemptReconnect() {
 // original join AND every reconnect retry — reconnecting must NOT touch the
 // screen/pips setup that joinRoom does once below, or a mid-match reconnect
 // would look like starting a brand new duel from scratch.
-function buildSocket(room, difficulty, target, ops) {
+function buildSocket(room, difficulty, target, ops, bot) {
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
@@ -321,11 +361,13 @@ function buildSocket(room, difficulty, target, ops) {
     // difficulty/target/ops only matter to whoever CREATES the room — the server
     // stores them once and every later joiner (typed code, invite link) just inherits them.
     // display_name is different: it's per-PLAYER, sent by everyone, every time.
+    // bot is like difficulty/target/ops — only meaningful from the creator, on a fresh room.
     let url = proto + "//" + location.host + "/ws/" + room;
     const params = [];
     if (difficulty) { params.push("difficulty=" + difficulty); }
     if (target) { params.push("target=" + target); }
     if (ops) { params.push("ops=" + ops); }
+    if (bot) { params.push("bot=" + bot); }
     const displayName = getPlayerName();
     if (displayName) { params.push("display_name=" + encodeURIComponent(displayName)); }
     if (params.length) { url += "?" + params.join("&"); }
@@ -359,15 +401,7 @@ ws.onmessage = (e) => {
         startMatchStartCountdown(msg.names);
     }
     if (msg.type === "deathmatch") {
-        // presentation only — the server already decided the NEXT question is a
-        // decider; this is just the couple-second beat announcing it feels that way
-        document.body.classList.add("deathmatch");
-        document.getElementById("pulse").style.display = "none";
-        document.getElementById("controls").style.display = "none";
-        const q = document.getElementById("question");
-        q.textContent = "DEATHMATCH";
-        q.classList.add("deathmatch-text");
-        playDeathmatch();
+        startDeathmatchCountdown(msg.seconds || 3);
     }
     if (msg.type === "question") {
         // a "question" after postgame-actions was showing means this is a rematch's
@@ -381,8 +415,7 @@ ws.onmessage = (e) => {
         clearInterval(matchStartInterval);   // in case the real question ever beats our local countdown to zero
         matchStartInterval = null;
         hideMatchStartScreen();
-        document.body.classList.remove("deathmatch");   // the decider's live now — the beat's over, the glow/shake should be too
-        document.getElementById("question").classList.remove("deathmatch-text");
+        stopDeathmatchCountdown();   // the decider's live now — the beat's over, the glow/shake should be too
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
         document.getElementById("question").textContent = msg.text;
@@ -457,8 +490,7 @@ ws.onmessage = (e) => {
         clearInterval(matchStartInterval);
         matchStartInterval = null;
         hideMatchStartScreen();
-        document.body.classList.remove("deathmatch");
-        document.getElementById("question").classList.remove("deathmatch-text");
+        stopDeathmatchCountdown();
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
         document.getElementById("controls").style.display = "none";
@@ -485,6 +517,12 @@ ws.onmessage = (e) => {
     if (msg.type === "welcome") {
         me = msg.name;
         winTarget = msg.target || 5;   // however many points this room's creator picked
+        // joinRoom() already drew the pips at the OLD winTarget (5, the module
+        // default) before this async "welcome" ever arrived — without a
+        // re-render here they'd silently stay wrong until the first scored
+        // round happened to call renderPips again via updateScore()
+        renderPips(document.getElementById("my-pips"), 0);
+        renderPips(document.getElementById("their-pips"), 0);
         const chip = document.getElementById("me-chip");
         chip.textContent = "you’re cyan ▸";
         chip.classList.add("cyan");
@@ -503,13 +541,13 @@ ws.onmessage = (e) => {
 };
 }
 
-function joinRoom(room, difficulty, target, ops) {
+function joinRoom(room, difficulty, target, ops, bot) {
     document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     hasJoinedGame = false;
     reconnectDeadline = 0;
     clearTimeout(reconnectTimer);
-    lastJoinParams = { room, difficulty, target, ops };
-    buildSocket(room, difficulty, target, ops);
+    lastJoinParams = { room, difficulty, target, ops, bot };
+    buildSocket(room, difficulty, target, ops, bot);
 
     // swap screens: lobby out, game in (waiting state: share the code)
     currentRoom = room;
@@ -868,14 +906,26 @@ function endSoloRun() {
     document.getElementById("solo-actions").style.display = "flex";   // shares display:none with #postgame-actions — must be revealed explicitly
 }
 
-function createDuel() {
-    // mint a shareable 4-letter code; the backend accepts any room string
+function mintRoomCode() {
+    // a shareable 4-letter code; the backend accepts any room string
     const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // no I/O — they read as 1/0
     let code = "";
     for (let i = 0; i < 4; i++) {
         code += letters[Math.floor(Math.random() * letters.length)];
     }
-    joinRoom(code, selectedDifficulty, selectedTarget, selectedOps.join(","));
+    return code;
+}
+
+function createDuel() {
+    joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","));
+}
+
+// same engine as a real duel — the "opponent" is just a server-simulated
+// player (see games[room_code]["bot"] in main.py) that answers on a randomized
+// delay. Bot SPEED is tied to the same difficulty dial as the QUESTIONS —
+// one control instead of two, at the cost of not being separately tunable.
+function createBotDuel() {
+    joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","), selectedDifficulty);
 }
 
 function joinTyped() {
@@ -966,6 +1016,7 @@ document.getElementById("settings-toggle").onclick = () => {
 };
 
 document.getElementById("solo-link").onclick = enterSolo;
+document.getElementById("bot-link").onclick = createBotDuel;
 document.getElementById("solo-leave").onclick = leaveSolo;
 document.getElementById("solo-back").onclick = leaveSolo;
 document.getElementById("solo-start").onclick = startSolo;
