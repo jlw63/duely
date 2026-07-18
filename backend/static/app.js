@@ -1099,6 +1099,15 @@ document.getElementById("send").onclick = sendAnswer;
 document.getElementById("answer").addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendAnswer();
 });
+
+// type="number" inputs still accept e/E (scientific notation, 1e5), sign
+// characters, and the decimal point — but every answer in this game is a
+// non-negative integer, so none of those are ever part of a valid answer
+["answer", "solo-answer"].forEach((id) => {
+    document.getElementById(id).addEventListener("keydown", (e) => {
+        if (["e", "E", "+", "-", "."].includes(e.key)) { e.preventDefault(); }
+    });
+});
 // the shake is a one-shot animation — clear its class the moment CSS says it finished,
 // rather than duplicating "0.4s" as a magic number in a setTimeout here too
 document.getElementById("answer").addEventListener("animationend", (e) => {
