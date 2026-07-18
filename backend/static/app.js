@@ -420,6 +420,7 @@ ws.onmessage = (e) => {
         lastQuestionText = msg.text;
         document.getElementById("question").textContent = msg.text;
         document.getElementById("pulse").style.display = "block";   // round is live
+        document.getElementById("answer").value = "";                 // whatever you were mid-typing belonged to the OLD question
         document.getElementById("answer").focus();                   // hands on keys, every round
         document.getElementById("answer").classList.remove("wrong", "shake");  // fresh round, clear the last miss
         submissionPending = false;
