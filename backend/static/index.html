@@ -41,6 +41,13 @@
         <input id="player-name" type="text" placeholder="your name (optional)" maxlength="16" autocomplete="off">
       </div>
       <div class="setting-group">
+        <span class="setting-label">category</span>
+        <div id="category-picker" role="radiogroup" aria-label="category">
+          <button class="cat-opt active" data-category="math" role="radio" aria-checked="true">math</button>
+          <button class="cat-opt" data-category="geography" role="radio" aria-checked="false">geography</button>
+        </div>
+      </div>
+      <div class="setting-group">
         <span class="setting-label">difficulty</span>
         <div id="difficulty" role="radiogroup" aria-label="difficulty">
           <!-- ranges here must match NUMBER_RANGE in main.py — this is display copy, not logic, so it can't enforce itself -->
@@ -59,7 +66,7 @@
           <button class="target-opt" data-target="30" role="radio" aria-checked="false">30</button>
         </div>
       </div>
-      <div class="setting-group">
+      <div class="setting-group" id="ops-group">
         <span class="setting-label">operations</span>
         <div id="ops-picker" role="group" aria-label="operations">
           <button class="op-opt active" data-op="add" role="checkbox" aria-checked="true">+</button>
@@ -67,6 +74,13 @@
           <button class="op-opt" data-op="mul" role="checkbox" aria-checked="false">&times;</button>
           <button class="op-opt" data-op="div" role="checkbox" aria-checked="false">&divide;</button>
           <button class="op-opt" data-op="mod" role="checkbox" aria-checked="false">%</button>
+        </div>
+      </div>
+      <div class="setting-group" id="geo-modes-group" style="display: none;">
+        <span class="setting-label">geo modes</span>
+        <div id="geo-modes-picker" role="group" aria-label="geography modes">
+          <button class="geo-opt active" data-geo="flag" role="checkbox" aria-checked="true">flags</button>
+          <button class="geo-opt active" data-geo="capital" role="checkbox" aria-checked="true">capitals</button>
         </div>
       </div>
     </div>
@@ -189,7 +203,10 @@
     </div>
   </div>
   <div id="controls">
-    <input id="answer" type="number" inputmode="numeric" placeholder="answer">
+    <!-- type="text" (not "number") because geography answers are words — inputmode
+         is switched to "numeric" for math rounds via JS once the room's real
+         category is known, to still get a numeric keypad on mobile for those -->
+    <input id="answer" type="text" inputmode="numeric" placeholder="answer" autocomplete="off">
     <button id="send">go</button>
   </div>
   <div id="postgame-status" class="postgame-status" aria-live="polite"></div>

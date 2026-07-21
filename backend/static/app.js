@@ -215,6 +215,7 @@ function setMatchPaused(paused) {
 
 let opponentGraceInterval = null;
 let lastQuestionText = "";   // so the paused screen can hand the LIVE question back, not a blank one
+let lastQuestionDisplay = "big";   // "big" or "sentence" — restored alongside lastQuestionText
 
 // the pause takes over the question area itself — hidden pulse/controls, a
 // countdown standing in where the question was — rather than a small banner
@@ -226,6 +227,7 @@ function startOpponentGraceCountdown(totalSeconds) {
     document.getElementById("pulse").style.display = "none";
     document.getElementById("controls").style.display = "none";
     const questionEl = document.getElementById("question");
+    questionEl.classList.remove("sentence");   // this overlay's own text is always short, regardless of the live question's style
     const tick = () => {
         questionEl.textContent = "waiting for opponent to reconnect… (" + remaining + "s)";
         remaining -= 1;
@@ -242,6 +244,7 @@ function stopOpponentGraceCountdown() {
     opponentGraceInterval = null;
     setMatchPaused(false);
     document.getElementById("question").textContent = lastQuestionText;
+    document.getElementById("question").classList.toggle("sentence", lastQuestionDisplay === "sentence");
     document.getElementById("pulse").style.display = "block";
     document.getElementById("controls").style.display = "flex";
 }
@@ -257,6 +260,7 @@ function startDeathmatchCountdown(totalSeconds) {
     document.getElementById("pulse").style.display = "none";
     document.getElementById("controls").style.display = "none";
     const q = document.getElementById("question");
+    q.classList.remove("sentence");   // this overlay's own text is always short, regardless of the live question's style
     let remaining = Math.round(totalSeconds);
     clearInterval(deathmatchInterval);
     playDeathmatch();   // the big two-blast klaxon, once, right as the screen goes red
@@ -344,7 +348,7 @@ function attemptReconnect() {
     reconnectTimer = setTimeout(() => {
         if (performance.now() > reconnectDeadline) { giveUpReconnecting(); return; }
         buildSocket(lastJoinParams.room, lastJoinParams.difficulty, lastJoinParams.target,
-                    lastJoinParams.ops, lastJoinParams.bot);
+                    lastJoinParams.ops, lastJoinParams.bot, lastJoinParams.category, lastJoinParams.geo);
     }, RECONNECT_RETRY_MS);
 }
 
@@ -352,15 +356,15 @@ function attemptReconnect() {
 // original join AND every reconnect retry — reconnecting must NOT touch the
 // screen/pips setup that joinRoom does once below, or a mid-match reconnect
 // would look like starting a brand new duel from scratch.
-function buildSocket(room, difficulty, target, ops, bot) {
+function buildSocket(room, difficulty, target, ops, bot, category, geo) {
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
     }
     leaving = false;
-    // difficulty/target/ops only matter to whoever CREATES the room — the server
-    // stores them once and every later joiner (typed code, invite link) just inherits them.
-    // display_name is different: it's per-PLAYER, sent by everyone, every time.
+    // difficulty/target/ops/category/geo only matter to whoever CREATES the room —
+    // the server stores them once and every later joiner (typed code, invite link)
+    // just inherits them. display_name is different: it's per-PLAYER, sent by everyone.
     // bot is like difficulty/target/ops — only meaningful from the creator, on a fresh room.
     let url = proto + "//" + location.host + "/ws/" + room;
     const params = [];
@@ -368,6 +372,8 @@ function buildSocket(room, difficulty, target, ops, bot) {
     if (target) { params.push("target=" + target); }
     if (ops) { params.push("ops=" + ops); }
     if (bot) { params.push("bot=" + bot); }
+    if (category) { params.push("category=" + category); }
+    if (geo) { params.push("geo=" + geo); }
     const displayName = getPlayerName();
     if (displayName) { params.push("display_name=" + encodeURIComponent(displayName)); }
     if (params.length) { url += "?" + params.join("&"); }
@@ -421,7 +427,11 @@ ws.onmessage = (e) => {
         stopDeathmatchCountdown();   // the decider's live now — the beat's over, the glow/shake should be too
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
+        lastQuestionDisplay = msg.display || "big";
         document.getElementById("question").textContent = msg.text;
+        // "sentence" (a capital prompt like "capital of Brazil?") gets a smaller
+        // size than the default, tuned for a short math expression or one flag emoji
+        document.getElementById("question").classList.toggle("sentence", lastQuestionDisplay === "sentence");
         document.getElementById("pulse").style.display = "block";   // round is live
         document.getElementById("answer").value = "";                 // whatever you were mid-typing belonged to the OLD question
         document.getElementById("answer").focus();                   // hands on keys, every round
@@ -527,6 +537,13 @@ ws.onmessage = (e) => {
         // round happened to call renderPips again via updateScore()
         renderPips(document.getElementById("my-pips"), 0);
         renderPips(document.getElementById("their-pips"), 0);
+        // the ROOM'S real category — not our own local lobby pick — since a
+        // joiner inherits whatever the creator actually chose. Text-answer
+        // categories need a real keyboard, not the numeric-only one math gets.
+        const answerBox = document.getElementById("answer");
+        const isTextCategory = msg.category === "geography";
+        answerBox.inputMode = isTextCategory ? "text" : "numeric";
+        answerBox.classList.toggle("text-answer", isTextCategory);
         const chip = document.getElementById("me-chip");
         chip.textContent = "you’re cyan ▸";
         chip.classList.add("cyan");
@@ -545,13 +562,13 @@ ws.onmessage = (e) => {
 };
 }
 
-function joinRoom(room, difficulty, target, ops, bot) {
+function joinRoom(room, difficulty, target, ops, bot, category, geo) {
     document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     hasJoinedGame = false;
     reconnectDeadline = 0;
     clearTimeout(reconnectTimer);
-    lastJoinParams = { room, difficulty, target, ops, bot };
-    buildSocket(room, difficulty, target, ops, bot);
+    lastJoinParams = { room, difficulty, target, ops, bot, category, geo };
+    buildSocket(room, difficulty, target, ops, bot, category, geo);
 
     // swap screens: lobby out, game in (waiting state: share the code)
     currentRoom = room;
@@ -696,6 +713,8 @@ function resetStreakBadge() {
 let selectedDifficulty = "medium";
 let selectedTarget = "5";
 let selectedOps = ["add", "sub"];   // multi-select — matches the server's own default
+let selectedCategory = "math";
+let selectedGeoModes = ["flag", "capital"];   // multi-select — matches the server's own default
 
 // ============================================================
 // SOLO PRACTICE — a "ghost timer" instead of an opponent. Runs
@@ -921,7 +940,8 @@ function mintRoomCode() {
 }
 
 function createDuel() {
-    joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","));
+    joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","), null,
+             selectedCategory, selectedGeoModes.join(","));
 }
 
 // same engine as a real duel — the "opponent" is just a server-simulated
@@ -929,7 +949,8 @@ function createDuel() {
 // delay. Bot SPEED is tied to the same difficulty dial as the QUESTIONS —
 // one control instead of two, at the cost of not being separately tunable.
 function createBotDuel() {
-    joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","), selectedDifficulty);
+    joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","), selectedDifficulty,
+             selectedCategory, selectedGeoModes.join(","));
 }
 
 function joinTyped() {
@@ -976,7 +997,12 @@ function sendAnswer() {
   if (!ws) return;   // no live connection, nothing to send
   const box = document.getElementById("answer");
   if (box.value.trim() === "") return;   // nothing typed, nothing to submit
-  ws.send(JSON.stringify({ type: "answer", value: Number(box.value) }));
+  // geography answers are words — the server does its own trim/lowercase
+  // matching against a set of accepted spellings (see answer_matches in
+  // main.py), so the raw text goes over the wire, not a parsed Number
+  const isText = box.classList.contains("text-answer");
+  const value = isText ? box.value : Number(box.value);
+  ws.send(JSON.stringify({ type: "answer", value: value }));
   box.value = "";   // empty the box for the next round
   box.classList.remove("wrong");   // this attempt is fresh; drop any red tint from the last one
   armSubmissionWatch();
@@ -1067,6 +1093,42 @@ document.querySelectorAll(".target-opt").forEach((btn) => {
     };
 });
 
+// single-select: which QUESTION SET this match draws from. Toggles which of
+// the two mutually-exclusive sub-pickers below (operations vs geo modes) is
+// relevant — math's operators mean nothing for a flag/capital question.
+document.querySelectorAll(".cat-opt").forEach((btn) => {
+    btn.onclick = () => {
+        selectedCategory = btn.dataset.category;
+        document.querySelectorAll(".cat-opt").forEach((b) => {
+            const active = b === btn;
+            b.classList.toggle("active", active);
+            b.setAttribute("aria-checked", active ? "true" : "false");
+        });
+        const isGeo = selectedCategory === "geography";
+        document.getElementById("ops-group").style.display = isGeo ? "none" : "flex";
+        document.getElementById("geo-modes-group").style.display = isGeo ? "flex" : "none";
+        // the 1-20/1-100/1-300 hint under difficulty is math-specific — see
+        // #difficulty.geo-mode in style.css
+        document.getElementById("difficulty").classList.toggle("geo-mode", isGeo);
+    };
+});
+
+// multi-select: same "at least one stays on" rule as operations above
+document.querySelectorAll(".geo-opt").forEach((btn) => {
+    btn.onclick = () => {
+        const mode = btn.dataset.geo;
+        const isActive = btn.classList.contains("active");
+        if (isActive && selectedGeoModes.length === 1) { return; }
+        if (isActive) {
+            selectedGeoModes = selectedGeoModes.filter((m) => m !== mode);
+        } else {
+            selectedGeoModes.push(mode);
+        }
+        btn.classList.toggle("active", !isActive);
+        btn.setAttribute("aria-checked", (!isActive).toString());
+    };
+});
+
 // multi-select: each chip toggles independently, but at least one operator
 // must always stay on — a match with nothing selected has no questions to ask
 document.querySelectorAll(".op-opt").forEach((btn) => {
@@ -1101,12 +1163,17 @@ document.getElementById("answer").addEventListener("keydown", (e) => {
 });
 
 // type="number" inputs still accept e/E (scientific notation, 1e5), sign
-// characters, and the decimal point — but every answer in this game is a
-// non-negative integer, so none of those are ever part of a valid answer
-["answer", "solo-answer"].forEach((id) => {
-    document.getElementById(id).addEventListener("keydown", (e) => {
-        if (["e", "E", "+", "-", "."].includes(e.key)) { e.preventDefault(); }
-    });
+// characters, and the decimal point — but every MATH answer in this game is
+// a non-negative integer, so none of those are ever part of a valid answer.
+// Solo is always math, so its guard is unconditional; #answer's own is gated
+// on the "text-answer" class (see the "welcome" handler) since a geography
+// answer is a real word that may legitimately contain any of those letters.
+document.getElementById("answer").addEventListener("keydown", (e) => {
+    if (document.getElementById("answer").classList.contains("text-answer")) { return; }
+    if (["e", "E", "+", "-", "."].includes(e.key)) { e.preventDefault(); }
+});
+document.getElementById("solo-answer").addEventListener("keydown", (e) => {
+    if (["e", "E", "+", "-", "."].includes(e.key)) { e.preventDefault(); }
 });
 // the shake is a one-shot animation — clear its class the moment CSS says it finished,
 // rather than duplicating "0.4s" as a magic number in a setTimeout here too

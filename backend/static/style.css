@@ -260,18 +260,22 @@
     color: var(--dim);
   }
 
-  /* --- difficulty/target: single-select peers. ops: multi-select, its own row --- */
+  /* --- category/difficulty/target: single-select peers. ops/geo-modes: multi-select rows --- */
+  #category-picker,
   #difficulty,
   #target-picker,
-  #ops-picker {
+  #ops-picker,
+  #geo-modes-picker {
     display: flex;
     gap: 0.4rem;
     flex-wrap: wrap;
     justify-content: center;
   }
+  .cat-opt,
   .diff-opt,
   .target-opt,
-  .op-opt {
+  .op-opt,
+  .geo-opt {
     font-weight: 600;
     background: none;
     color: var(--soft);
@@ -279,7 +283,7 @@
     border-radius: 999px;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
   }
-  .diff-opt, .target-opt {
+  .cat-opt, .diff-opt, .target-opt, .geo-opt {
     font-size: 0.78rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -302,6 +306,10 @@
     color: var(--dim);
   }
   .diff-opt.active .diff-range { color: rgba(0, 176, 255, 0.75); }
+  /* the 1-20/1-100/1-300 hint is math-specific (see NUMBER_RANGE in main.py) —
+     geography's easy/medium/hard means country obscurity, not a number range,
+     so the hint would be actively misleading left showing in that mode */
+  #difficulty.geo-mode .diff-range { display: none; }
   /* symbols, not words — a fixed circle keeps +, ×, % all reading as equal-weight peers.
      Unselected circles get a visibly brighter border + faint fill than the shared
      default — a lone thin var(--edge) ring reads fine under a text chip's label,
@@ -314,16 +322,17 @@
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(170, 176, 200, 0.4);
   }
-  .diff-opt:hover, .target-opt:hover, .op-opt:hover { border-color: #4d5b8e; color: var(--text); }
-  /* single-select (difficulty, race-to): a RADIO language — outline + tint, one can ever be on */
-  .diff-opt.active, .target-opt.active {
+  .cat-opt:hover, .diff-opt:hover, .target-opt:hover, .op-opt:hover, .geo-opt:hover { border-color: #4d5b8e; color: var(--text); }
+  /* single-select (category, difficulty, race-to): a RADIO language — outline + tint, one can ever be on */
+  .cat-opt.active, .diff-opt.active, .target-opt.active {
     background: rgba(0, 176, 255, 0.12);
     border-color: var(--blue);
     color: var(--blue);
   }
-  /* multi-select (operations): a CHECKBOX language — solid fill, several can be on at once.
-     Visually distinct from the radio treatment above on purpose: same "selected" meaning,
-     different selection RULE, so it needs a different mark. */
+  /* multi-select (operations, geo modes): a CHECKBOX language — solid fill, several can be on
+     at once. Visually distinct from the radio treatment above on purpose: same "selected"
+     meaning, different selection RULE, so it needs a different mark. */
+  .geo-opt.active,
   .op-opt.active {
     background: var(--blue);
     border-color: var(--blue);
@@ -781,12 +790,20 @@
   #tri-right polygon { fill: var(--red); }
 
   #question, #solo-question {
-    font-size: clamp(2.8rem, 11vw, 4.2rem);   /* the math is the star during play */
+    font-size: clamp(2.8rem, 11vw, 4.2rem);   /* the math (and a flag emoji) is the star during play */
     font-weight: 800;
     letter-spacing: -0.01em;
     margin: 0 0 0.9rem;
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+  /* a full prompt like "capital of Brazil?" is a SENTENCE, not a short
+     expression — the default size (tuned for "68 + 46" or a single flag
+     emoji) would overflow badly at that length. Server tells the client
+     which style a question wants via "display" on the "question" message. */
+  #question.sentence {
+    font-size: clamp(1.6rem, 6vw, 2.4rem);
+    letter-spacing: normal;
   }
   /* the result deserves more scale than a single round ever gets, plus a
      one-time entrance so it reads as an EVENT rather than a status label */

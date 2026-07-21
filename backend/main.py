@@ -14,6 +14,7 @@ ALLOWED_EMOTES = {"👋", "😂", "😤", "🔥", "💀"}   # a fixed set, not f
 VALID_BOT_SKILLS = {"easy", "medium", "hard"}
 BOT_NAMES = {"easy": "Rookie Bot", "medium": "Pro Bot", "hard": "Champion Bot"}
 BOT_DELAY_RANGE = {"easy": (3.0, 5.5), "medium": (1.8, 3.5), "hard": (0.8, 2.0)}   # seconds, randomized per round
+VALID_CATEGORIES = {"math", "geography"}
 
 app = FastAPI()
 
@@ -134,18 +135,117 @@ def gen_question(difficulty, ops):
     return OPERATIONS[op](difficulty)
 
 
+# ============================================================
+# GEOGRAPHY — text-answered questions (flags, capitals), unlike math's
+# numeric ones. "tier" reuses the same easy/medium/hard vocabulary as
+# NUMBER_RANGE, but means general worldwide name-recognition instead of a
+# number range — DEATHMATCH_DIFFICULTY_BUMP escalates it the same way either
+# way, since that logic only ever touches games[room_code]["difficulty"].
+# ============================================================
+
+def _flag_emoji(iso2):
+    # a flag emoji IS just two "regional indicator" unicode characters, one
+    # per ISO 3166-1 alpha-2 letter — computed instead of hand-typed so there's
+    # no risk of a copy-pasted emoji being the wrong one
+    return "".join(chr(0x1F1E6 + ord(ch) - ord("A")) for ch in iso2.upper())
+
+COUNTRIES = [
+    {"iso2": "US", "name": "United States", "aliases": {"us", "usa", "america", "united states of america"},
+     "capital": "Washington DC", "capital_aliases": {"washington d.c.", "washington"}, "tier": "easy"},
+    {"iso2": "GB", "name": "United Kingdom", "aliases": {"uk", "britain", "great britain"},
+     "capital": "London", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "FR", "name": "France", "aliases": set(), "capital": "Paris", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "DE", "name": "Germany", "aliases": set(), "capital": "Berlin", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "JP", "name": "Japan", "aliases": set(), "capital": "Tokyo", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "CN", "name": "China", "aliases": set(), "capital": "Beijing", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "CA", "name": "Canada", "aliases": set(), "capital": "Ottawa", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "AU", "name": "Australia", "aliases": set(), "capital": "Canberra", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "BR", "name": "Brazil", "aliases": set(), "capital": "Brasilia", "capital_aliases": {"brasília"}, "tier": "easy"},
+    {"iso2": "IN", "name": "India", "aliases": set(), "capital": "New Delhi", "capital_aliases": {"delhi"}, "tier": "easy"},
+    {"iso2": "IT", "name": "Italy", "aliases": set(), "capital": "Rome", "capital_aliases": set(), "tier": "easy"},
+    {"iso2": "ES", "name": "Spain", "aliases": set(), "capital": "Madrid", "capital_aliases": set(), "tier": "easy"},
+
+    {"iso2": "MX", "name": "Mexico", "aliases": set(), "capital": "Mexico City", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "RU", "name": "Russia", "aliases": set(), "capital": "Moscow", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "KR", "name": "South Korea", "aliases": {"korea"}, "capital": "Seoul", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "EG", "name": "Egypt", "aliases": set(), "capital": "Cairo", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "AR", "name": "Argentina", "aliases": set(), "capital": "Buenos Aires", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "NL", "name": "Netherlands", "aliases": {"holland"}, "capital": "Amsterdam", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "SE", "name": "Sweden", "aliases": set(), "capital": "Stockholm", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "GR", "name": "Greece", "aliases": set(), "capital": "Athens", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "TR", "name": "Turkey", "aliases": {"turkiye", "türkiye"}, "capital": "Ankara", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "ZA", "name": "South Africa", "aliases": set(), "capital": "Pretoria", "capital_aliases": {"cape town"}, "tier": "medium"},
+    {"iso2": "TH", "name": "Thailand", "aliases": set(), "capital": "Bangkok", "capital_aliases": set(), "tier": "medium"},
+    {"iso2": "PL", "name": "Poland", "aliases": set(), "capital": "Warsaw", "capital_aliases": set(), "tier": "medium"},
+
+    {"iso2": "KZ", "name": "Kazakhstan", "aliases": set(), "capital": "Astana", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "MN", "name": "Mongolia", "aliases": set(), "capital": "Ulaanbaatar", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "UY", "name": "Uruguay", "aliases": set(), "capital": "Montevideo", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "SI", "name": "Slovenia", "aliases": set(), "capital": "Ljubljana", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "BT", "name": "Bhutan", "aliases": set(), "capital": "Thimphu", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "ER", "name": "Eritrea", "aliases": set(), "capital": "Asmara", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "SR", "name": "Suriname", "aliases": set(), "capital": "Paramaribo", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "KG", "name": "Kyrgyzstan", "aliases": set(), "capital": "Bishkek", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "BF", "name": "Burkina Faso", "aliases": set(), "capital": "Ouagadougou", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "TJ", "name": "Tajikistan", "aliases": set(), "capital": "Dushanbe", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "VU", "name": "Vanuatu", "aliases": set(), "capital": "Port Vila", "capital_aliases": set(), "tier": "hard"},
+    {"iso2": "LI", "name": "Liechtenstein", "aliases": set(), "capital": "Vaduz", "capital_aliases": set(), "tier": "hard"},
+]
+
+def _countries_for_tier(tier):
+    pool = [c for c in COUNTRIES if c["tier"] == tier]
+    return pool or COUNTRIES   # unrecognized/missing tier — never trust it, fall back to the full pool
+
+def _gen_flag(tier):
+    country = random.choice(_countries_for_tier(tier))
+    text = _flag_emoji(country["iso2"])
+    accepted = {country["name"].lower()} | {a.lower() for a in country["aliases"]}
+    return text, {"canonical": country["name"], "accepted": accepted}, "big"
+
+def _gen_capital(tier):
+    country = random.choice(_countries_for_tier(tier))
+    text = f"capital of {country['name']}?"
+    accepted = {country["capital"].lower()} | {a.lower() for a in country["capital_aliases"]}
+    return text, {"canonical": country["capital"], "accepted": accepted}, "sentence"
+
+GEO_MODES = {"flag": _gen_flag, "capital": _gen_capital}
+DEFAULT_GEO_MODES = ["flag", "capital"]
+
+def gen_geo_question(difficulty, geo_modes):
+    valid = [m for m in geo_modes if m in GEO_MODES] or DEFAULT_GEO_MODES   # never trust the client
+    mode = random.choice(valid)
+    return GEO_MODES[mode](difficulty)
+
+def gen_question_for_room(game):
+    # math's generator returns (text, answer) — a bare number; geography's
+    # returns (text, answer, display) — answer is a dict of accepted text
+    # strings, since a country name has no single "correct" spelling to
+    # exact-match against. Normalizing math's shape here (display="big")
+    # keeps everything downstream (start_round, reconnect resend) uniform.
+    if game["category"] == "geography":
+        return gen_geo_question(game["difficulty"], game["geo_modes"])
+    text, answer = gen_question(game["difficulty"], game["ops"])
+    return text, answer, "big"
+
+def answer_matches(submitted, correct):
+    if isinstance(correct, dict):   # geography: a set of accepted lowercase strings
+        return isinstance(submitted, str) and submitted.strip().lower() in correct["accepted"]
+    return submitted == correct   # math: exact numeric equality
+
+
 async def start_round(room_code):
     game = games[room_code]
-    text, answer = gen_question(game["difficulty"], game["ops"])
+    text, answer, display = gen_question_for_room(game)
     game["answer"] = answer
     game["question_text"] = text   # so a reconnecting player can be resent the LIVE question, not just told a round exists
+    game["question_display"] = display   # "big" (math/flags) or "sentence" (capital prompts) — see #question.sentence
     game["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
     game["round_token"] += 1   # lets a stale bot-answer task (scheduled for an OLD question) recognize it's too late
     # scores riding along here (not just on "result"/"game_over") is how a client
     # learns its OPPONENT's real display name — scores is name-keyed, so whichever
     # key isn't "me" IS the opponent, from the very first round, not just after
     # the first point is scored
-    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": game["scores"]})
+    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": game["scores"], "display": display})
     if game["bot"]:
         asyncio.create_task(bot_answer(room_code, game["round_token"]))
 
@@ -241,7 +341,7 @@ async def expire_disconnect(room_code, name):
 @app.websocket("/ws/{room_code}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium",
                               target: int = DEFAULT_TARGET, ops: str = "add,sub", display_name: str = "",
-                              bot: str = ""):
+                              bot: str = "", category: str = "math", geo: str = "flag,capital"):
     # FastAPI reads ?difficulty=...&target=...&ops=... straight off the URL into
     # these parameters (ops arrives as one comma-separated string — repeated
     # query keys would need the pretty +/×/÷/% symbols URL-escaped, so the
@@ -270,13 +370,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
         # would otherwise be missing from "players"/"scores" here, crashing
         # the moment they try to answer.
         requested_ops = [op.strip() for op in ops.split(",") if op.strip() in OPERATIONS]
+        requested_geo = [g.strip() for g in geo.split(",") if g.strip() in GEO_MODES]
         games[room_code] = {"answer": None, "scores": {}, "players": {}, "question_text": None,
+                             "question_display": "big",
                              "question_time": None, "fastest": None, "rematch_requests": set(),
                              "pending_disconnects": {},   # name -> asyncio task, while they're mid-reconnect-window
                              "paused": False,   # true while someone's mid-reconnect-window — no scoring off an absent opponent
                              "difficulty": difficulty if difficulty in NUMBER_RANGE else "medium",
                              "target": target if target in VALID_TARGETS else DEFAULT_TARGET,
                              "ops": requested_ops or DEFAULT_OPS,
+                             "category": category if category in VALID_CATEGORIES else "math",
+                             "geo_modes": requested_geo or DEFAULT_GEO_MODES,
                              "bot": None, "round_token": 0}
         for i, sock in enumerate(manager.rooms[room_code], start=1):
             # only THIS request's own connection has a real chosen name available —
@@ -288,7 +392,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 name = f"player{i}"
             games[room_code]["players"][sock] = name
             games[room_code]["scores"][name] = 0
-            await sock.send_json({"type": "welcome", "name": name, "target": games[room_code]["target"]})
+            await sock.send_json({"type": "welcome", "name": name, "target": games[room_code]["target"],
+                                   "category": games[room_code]["category"]})
         if bot in VALID_BOT_SKILLS:
             # the "second player" — never a real socket, just a scores/name
             # entry the rest of the engine (rounds, streaks, deathmatch,
@@ -315,6 +420,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
             games[room_code]["paused"] = False
             await websocket.send_json({"type": "welcome", "name": reconnect_name,
                                         "target": games[room_code]["target"],
+                                        "category": games[room_code]["category"],
                                         "reconnected": True, "scores": games[room_code]["scores"]})
             # only the OTHER player needs telling — broadcasting this to the
             # reconnecting socket too would race ahead of its own question resend below
@@ -324,14 +430,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 # restart its clock, so the pause itself is never counted as
                 # part of anyone's answer time
                 games[room_code]["question_time"] = time.monotonic()
-                await websocket.send_json({"type": "question", "text": games[room_code]["question_text"]})
+                await websocket.send_json({"type": "question", "text": games[room_code]["question_text"],
+                                            "display": games[room_code]["question_display"]})
         else:
             # game already exists — this is a normal second player joining
             fallback = f"player{len(manager.rooms[room_code])}"
             player_name = dedupe_name(clean_name(display_name, fallback), games[room_code]["scores"])
             games[room_code]["players"][websocket] = player_name
             games[room_code]["scores"][player_name] = 0
-            await websocket.send_json({"type": "welcome", "name": player_name, "target": games[room_code]["target"]})
+            await websocket.send_json({"type": "welcome", "name": player_name, "target": games[room_code]["target"],
+                                        "category": games[room_code]["category"]})
 
     # only kick off the FIRST round when two players originally come together —
     # a reconnect must never generate a fresh question out from under whoever
@@ -348,7 +456,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                     and room_code in games
                     and not games[room_code]["paused"]   # opponent's mid-reconnect — no free points off an absent player
                     and games[room_code]["answer"] is not None  #no live round -> nothing can score
-                    and data.get("value") == games[room_code]["answer"]):
+                    and answer_matches(data.get("value"), games[room_code]["answer"])):
                 name = games[room_code]["players"][websocket]
                 await record_answer(room_code, name)
 
