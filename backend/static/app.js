@@ -1275,6 +1275,7 @@ function leaveRoom() {
     ws = null;
     me = null;
     winTarget = 5;         // back to the default until the next room's "welcome" says otherwise
+    clearInviteParam();    // we're back in the lobby — the URL shouldn't still say otherwise
     // reset the game screen to its factory state for next time
     document.body.classList.remove("playing");   // full-size header returns for the lobby
     document.getElementById("question").textContent = "waiting for opponent...";
@@ -1559,6 +1560,15 @@ document.getElementById("answer").addEventListener("animationend", (e) => {
 document.getElementById("answer").addEventListener("input", () => {
   document.getElementById("answer").classList.remove("wrong");
 });
+
+// Once you're back in the lobby the "?room=" in the address bar is a lie: a
+// refresh (or a bookmark, or that URL pasted anywhere) would auto-rejoin the
+// room you just left. replaceState rather than pushState — the stale invite
+// URL shouldn't become a back-button destination either.
+function clearInviteParam() {
+    if (!new URLSearchParams(location.search).has("room")) { return; }
+    history.replaceState(null, "", location.pathname);
+}
 
 // invite links: /?room=XNDS joins straight into the room, no lobby
 const inviteRoom = new URLSearchParams(location.search).get("room");
