@@ -164,15 +164,33 @@ function shakeWrong(elementId) {
     box.classList.add("shake");         // one-shot motion — removed by the animationend listener below
 }
 
-let isGeoMatch = false;   // set from "welcome" — gates the skip row, math has no use for it
+let isGeoMatch = false;      // set from "welcome" — gates the skip row, math has no use for it
+let controlsVisible = false; // whether the round's answering controls belong on screen at all
 
-// the one place #controls' visibility changes — #skip-row rides along with it
-// (geography only), so every caller that used to touch #controls directly
-// can't forget the skip button and leave it showing over a math round or a
+// the one place #controls' visibility changes — #skip-row and the multi-choice
+// buttons ride along with it, so every caller that used to touch #controls
+// directly can't forget them and leave them showing over a math round or a
 // postgame screen
 function setControlsVisible(visible) {
-    document.getElementById("controls").style.display = visible ? "flex" : "none";
+    controlsVisible = visible;
     document.getElementById("skip-row").style.display = (visible && isGeoMatch) ? "flex" : "none";
+    renderAnswerUI();
+}
+
+// which answering control the round actually gets: four buttons when the
+// server sent choices, the text box otherwise. Split out from
+// setControlsVisible so a new question can re-render the buttons without the
+// caller needing to know which mode the room is in.
+function renderAnswerUI() {
+    const wantChoices = controlsVisible && Array.isArray(lastQuestionChoices);
+    document.getElementById("controls").style.display = (controlsVisible && !wantChoices) ? "flex" : "none";
+    if (wantChoices) {
+        renderChoiceButtons("answer-choices", lastQuestionChoices, sendChoiceAnswer);
+        if (choiceLockedOut) { lockChoiceButtons("answer-choices", null); }
+    } else {
+        clearChoiceButtons("answer-choices");
+        if (controlsVisible) { document.getElementById("answer").focus(); }   // hands on keys, every round
+    }
 }
 
 // waiting = code-sharing hero; match = question + pips + input. Never both.
@@ -222,12 +240,18 @@ function setMatchPaused(paused) {
     document.getElementById("answer").disabled = paused;
     document.getElementById("send").disabled = paused;
     document.getElementById("skip-btn").disabled = paused || skipRequested;   // stays disabled after unpause if already voted this round
+    // same rule for the multi-choice buttons — and an already-spent guess
+    // stays spent after the opponent comes back
+    document.querySelectorAll("#answer-choices .choice-btn").forEach((b) => {
+        b.disabled = paused || choiceLockedOut;
+    });
     document.getElementById("pulse").classList.toggle("paused", paused);
 }
 
 let opponentGraceInterval = null;
 let lastQuestionText = "";   // so the paused screen can hand the LIVE question back, not a blank one
 let lastQuestionDisplay = "big";   // "big" | "sentence" | "flag" — restored alongside lastQuestionText
+let lastQuestionChoices = null;    // the live round's multi-choice options, or null in type mode
 
 const FLAG_BASE = "https://flagcdn.com/";   // e.g. https://flagcdn.com/us.svg — free, no key; swap for a bundled set if ever going fully offline
 
@@ -385,7 +409,8 @@ function attemptReconnect() {
     reconnectTimer = setTimeout(() => {
         if (performance.now() > reconnectDeadline) { giveUpReconnecting(); return; }
         buildSocket(lastJoinParams.room, lastJoinParams.difficulty, lastJoinParams.target,
-                    lastJoinParams.ops, lastJoinParams.bot, lastJoinParams.category, lastJoinParams.geo);
+                    lastJoinParams.ops, lastJoinParams.bot, lastJoinParams.category, lastJoinParams.geo,
+                    lastJoinParams.answerMode);
     }, RECONNECT_RETRY_MS);
 }
 
@@ -393,7 +418,7 @@ function attemptReconnect() {
 // original join AND every reconnect retry — reconnecting must NOT touch the
 // screen/pips setup that joinRoom does once below, or a mid-match reconnect
 // would look like starting a brand new duel from scratch.
-function buildSocket(room, difficulty, target, ops, bot, category, geo) {
+function buildSocket(room, difficulty, target, ops, bot, category, geo, answerMode) {
     let proto = "ws:";
     if (location.protocol === "https:") {
         proto = "wss:";
@@ -411,6 +436,7 @@ function buildSocket(room, difficulty, target, ops, bot, category, geo) {
     if (bot) { params.push("bot=" + bot); }
     if (category) { params.push("category=" + category); }
     if (geo) { params.push("geo=" + geo); }
+    if (answerMode) { params.push("answer_mode=" + answerMode); }
     const displayName = getPlayerName();
     if (displayName) { params.push("display_name=" + encodeURIComponent(displayName)); }
     if (params.length) { url += "?" + params.join("&"); }
@@ -465,14 +491,26 @@ ws.onmessage = (e) => {
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
         lastQuestionDisplay = msg.display || "big";
+        lastQuestionChoices = msg.choices || null;
         renderQuestion(msg.text, lastQuestionDisplay);
         document.getElementById("pulse").style.display = "block";   // round is live
         document.getElementById("answer").value = "";                 // whatever you were mid-typing belonged to the OLD question
-        document.getElementById("answer").focus();                   // hands on keys, every round
         document.getElementById("answer").classList.remove("wrong", "shake");  // fresh round, clear the last miss
+        choiceLockedOut = false;
+        renderAnswerUI();
         submissionPending = false;
         clearTimeout(submissionTimer);
         resetSkipState();   // a fresh question means any pending skip vote is stale
+    }
+    if (msg.type === "locked_out") {
+        // the server rejected our guess and spent our one shot for this round
+        choiceLockedOut = true;
+    }
+    if (msg.type === "round_lost") {
+        // both players guessed wrong — nobody takes this round. The next
+        // "question" is right behind this, so this is just the miss cue.
+        flashRound(false);
+        playMiss();
     }
     if (msg.type === "result") {
         updateScore(msg.scores);
@@ -612,13 +650,13 @@ ws.onmessage = (e) => {
 };
 }
 
-function joinRoom(room, difficulty, target, ops, bot, category, geo) {
+function joinRoom(room, difficulty, target, ops, bot, category, geo, answerMode) {
     document.getElementById("lobby-error").classList.remove("show");   // clear any stale error from a previous attempt
     hasJoinedGame = false;
     reconnectDeadline = 0;
     clearTimeout(reconnectTimer);
-    lastJoinParams = { room, difficulty, target, ops, bot, category, geo };
-    buildSocket(room, difficulty, target, ops, bot, category, geo);
+    lastJoinParams = { room, difficulty, target, ops, bot, category, geo, answerMode };
+    buildSocket(room, difficulty, target, ops, bot, category, geo, answerMode);
 
     // swap screens: lobby out, game in (waiting state: share the code)
     currentRoom = room;
@@ -765,6 +803,7 @@ let selectedTarget = "5";
 let selectedOps = ["add", "sub"];   // multi-select — matches the server's own default
 let selectedCategory = "math";
 let selectedGeoModes = ["flag", "capital"];   // multi-select — matches the server's own default
+let selectedAnswerMode = "type";   // geography only: "type" (typo-tolerant text) | "choice" (four buttons)
 
 // ============================================================
 // SOLO PRACTICE — a "ghost timer" instead of an opponent. Runs
@@ -846,22 +885,81 @@ function loadGeoData() {
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-function soloGenGeoQuestion(geoModes) {
+// --- typo tolerance, mirrored from main.py (_edit_distance / _typo_threshold
+// / _close_enough). Solo checks answers locally, so the same forgiveness has
+// to exist on both sides — keep the thresholds here and there in sync. ---
+function editDistance(a, b, cap) {
+    if (a === b) return 0;
+    let prev2 = null;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = new Array(b.length + 1).fill(0);
+        cur[0] = i;
+        for (let j = 1; j <= b.length; j++) {
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1,
+                              prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+                cur[j] = Math.min(cur[j], prev2[j - 2] + 1);   // adjacent-letter swap counts as one edit
+            }
+        }
+        if (Math.min(...cur) > cap) return cap + 1;   // can only grow from here
+        prev2 = prev;
+        prev = cur;
+    }
+    return prev[b.length];
+}
+
+function typoThreshold(length) {
+    if (length <= 4) return 0;   // too short to have any slack ("Chad"/"Chat")
+    if (length <= 8) return 1;
+    return 2;
+}
+
+function closeEnough(guess, accepted) {
+    return accepted.some((candidate) => {
+        const cap = typoThreshold(candidate.length);
+        if (cap === 0) return false;   // exact match was already tried by the caller
+        if (Math.abs(guess.length - candidate.length) > cap) return false;
+        return editDistance(guess, candidate, cap) <= cap;
+    });
+}
+
+// mirrors _pick_distractors/_with_choices in main.py: wrong options are other
+// countries' real values, so every button is plausible
+function soloBuildChoices(correctValue, key) {
+    const pool = [...new Set(geoData.map((c) => c[key]))].filter((v) => v !== correctValue);
+    const options = [correctValue];
+    while (options.length < SOLO_CHOICE_COUNT && pool.length) {
+        options.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    for (let i = options.length - 1; i > 0; i--) {   // shuffle, or the answer always sits first
+        const j = Math.floor(Math.random() * (i + 1));
+        [options[i], options[j]] = [options[j], options[i]];
+    }
+    return options;
+}
+
+const SOLO_CHOICE_COUNT = 4;   // matches CHOICE_COUNT in main.py
+
+function soloGenGeoQuestion(geoModes, answerMode) {
     const modes = geoModes.filter((m) => m === "flag" || m === "capital");
     const mode = pick(modes.length ? modes : ["flag", "capital"]);
     const c = pick(geoData);
+    const wantChoices = answerMode === "choice";
     if (mode === "flag") {
         const accepted = [c.name.toLowerCase(), ...c.aliases.map((a) => a.toLowerCase())];
-        return { text: c.iso2, answer: accepted, display: "flag", isText: true };
+        return { text: c.iso2, answer: accepted, display: "flag", isText: true,
+                 choices: wantChoices ? soloBuildChoices(c.name, "name") : null };
     }
     const accepted = [c.capital.toLowerCase(), ...c.capital_aliases.map((a) => a.toLowerCase())];
-    return { text: "capital of " + c.name + "?", answer: accepted, display: "sentence", isText: true };
+    return { text: "capital of " + c.name + "?", answer: accepted, display: "sentence", isText: true,
+             choices: wantChoices ? soloBuildChoices(c.capital, "capital") : null };
 }
 
 // geography if that's what's picked AND the data actually loaded; otherwise math
 function soloGenForCategory() {
     if (selectedCategory === "geography" && geoData && geoData.length) {
-        return soloGenGeoQuestion(selectedGeoModes);
+        return soloGenGeoQuestion(selectedGeoModes, selectedAnswerMode);
     }
     return soloGenQuestion(selectedDifficulty, selectedOps);
 }
@@ -903,6 +1001,7 @@ function enterSolo() {
 
 function leaveSolo() {
     stopSoloTimer();
+    clearChoiceButtons("solo-answer-choices");
     document.body.classList.remove("playing");
     document.getElementById("solo").style.display = "none";
     document.getElementById("lobby").style.display = "flex";
@@ -930,7 +1029,15 @@ function soloNextQuestion() {
     const box = document.getElementById("solo-answer");
     box.classList.remove("wrong", "shake");
     box.inputMode = q.isText ? "text" : "numeric";
-    box.focus();
+    // multi-choice swaps the input row out for buttons, same as multiplayer
+    const wantChoices = Array.isArray(q.choices);
+    document.getElementById("solo-controls").style.display = wantChoices ? "none" : "flex";
+    if (wantChoices) {
+        renderChoiceButtons("solo-answer-choices", q.choices, submitSoloChoice);
+    } else {
+        clearChoiceButtons("solo-answer-choices");
+        box.focus();
+    }
     updateSoloStreakDisplay();
     // deliberately no timer touch here — the bank keeps draining seamlessly across questions
 }
@@ -993,24 +1100,49 @@ function soloFlashMiss() {
     q.classList.add("flash-them");
 }
 
+// exact first, then typo-tolerant — but only when typing. A clicked button
+// is either exactly right or it isn't, same rule as answer_matches in main.py.
+function soloTextMatches(raw) {
+    const guess = raw.trim().toLowerCase();
+    if (soloCorrectAnswer.includes(guess)) return true;
+    return selectedAnswerMode === "type" && closeEnough(guess, soloCorrectAnswer);
+}
+
+function soloScoreCorrect() {
+    soloStreak += 1;
+    soloTimeBank = Math.min(SOLO_MAX_BANK, soloTimeBank + SOLO_BONUS);   // the reward: top up the bank, capped
+    playCorrect();
+    const q = document.getElementById("solo-question");
+    q.classList.remove("flash-you", "flash-them");
+    void q.offsetWidth;
+    q.classList.add("flash-you");
+    setTimeout(soloNextQuestion, 250);   // the clock keeps draining underneath this brief pause — no reset
+}
+
+// unlike multiplayer, a wrong tap only burns THAT option — the remaining
+// buttons stay live. There's no opponent to be fair to here, so the draining
+// clock is the only cost, matching how a mistyped answer costs nothing but time.
+function submitSoloChoice(choice, btn) {
+    if (soloCorrectAnswer.includes(choice.trim().toLowerCase())) {
+        soloScoreCorrect();
+    } else {
+        btn.disabled = true;
+        btn.classList.add("chosen-wrong");
+        playMiss();
+    }
+}
+
 function submitSoloAnswer() {
     const box = document.getElementById("solo-answer");
     if (box.value.trim() === "") return;
-    // geography: same normalize-and-set-membership check the server does in
+    // geography: same exact-then-typo-tolerant check the server does in
     // answer_matches; math: exact numeric equality
     const correct = soloAnswerIsText
-        ? soloCorrectAnswer.includes(box.value.trim().toLowerCase())
+        ? soloTextMatches(box.value)
         : Number(box.value) === soloCorrectAnswer;
     box.value = "";
     if (correct) {
-        soloStreak += 1;
-        soloTimeBank = Math.min(SOLO_MAX_BANK, soloTimeBank + SOLO_BONUS);   // the reward: top up the bank, capped
-        playCorrect();
-        const q = document.getElementById("solo-question");
-        q.classList.remove("flash-you", "flash-them");
-        void q.offsetWidth;
-        q.classList.add("flash-you");
-        setTimeout(soloNextQuestion, 250);   // the clock keeps draining underneath this brief pause — no reset
+        soloScoreCorrect();
     } else {
         // a wrong guess has no run-ending penalty — the time bank hitting zero
         // (see soloTick) is the ONLY way a run ends. This is just visual
@@ -1022,6 +1154,7 @@ function submitSoloAnswer() {
 
 function endSoloRun() {
     stopSoloTimer();
+    clearChoiceButtons("solo-answer-choices");   // #solo-play hides, but its buttons would survive a retry otherwise
     const isNewBest = recordSoloResult(soloStreak);
     document.getElementById("solo-final").textContent = soloStreak;
     document.getElementById("solo-final-note").innerHTML = isNewBest
@@ -1043,7 +1176,7 @@ function mintRoomCode() {
 
 function createDuel() {
     joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","), null,
-             selectedCategory, selectedGeoModes.join(","));
+             selectedCategory, selectedGeoModes.join(","), selectedAnswerMode);
 }
 
 // same engine as a real duel — the "opponent" is just a server-simulated
@@ -1052,7 +1185,7 @@ function createDuel() {
 // one control instead of two, at the cost of not being separately tunable.
 function createBotDuel() {
     joinRoom(mintRoomCode(), selectedDifficulty, selectedTarget, selectedOps.join(","), selectedDifficulty,
-             selectedCategory, selectedGeoModes.join(","));
+             selectedCategory, selectedGeoModes.join(","), selectedAnswerMode);
 }
 
 function joinTyped() {
@@ -1091,6 +1224,9 @@ function leaveRoom() {
     clearPostgameState();   // hides postgame-actions, which #again lives inside — no separate reset needed
     resetSkipState();
     isGeoMatch = false;
+    lastQuestionChoices = null;
+    choiceLockedOut = false;
+    clearChoiceButtons("answer-choices");
     // swap screens back
     document.getElementById("game").style.display = "none";
     document.getElementById("lobby").style.display = "flex";
@@ -1109,6 +1245,17 @@ function sendAnswer() {
   ws.send(JSON.stringify({ type: "answer", value: value }));
   box.value = "";   // empty the box for the next round
   box.classList.remove("wrong");   // this attempt is fresh; drop any red tint from the last one
+  armSubmissionWatch();
+}
+
+// multi-choice: one guess per round, so the buttons lock the moment one is
+// clicked. The server enforces the same rule (see locked_out in main.py) —
+// this is just so the UI says so immediately rather than after a round-trip.
+function sendChoiceAnswer(choice, btn) {
+  if (!ws || choiceLockedOut) return;
+  choiceLockedOut = true;
+  lockChoiceButtons("answer-choices", btn);
+  ws.send(JSON.stringify({ type: "answer", value: choice }));
   armSubmissionWatch();
 }
 
@@ -1225,6 +1372,21 @@ document.querySelectorAll(".cat-opt").forEach((btn) => {
         // whole row is hidden and the server draws from all countries (see
         // the mixed-tier note in gen_geo_question / _countries_for_tier)
         document.getElementById("difficulty-group").style.display = isGeo ? "none" : "flex";
+        // type-vs-multi-choice is meaningless for math — a number has no spelling
+        document.getElementById("answer-mode-group").style.display = isGeo ? "flex" : "none";
+    };
+});
+
+// single-select: how geography answers get given. "type" keeps the text box
+// (with typo tolerance); "choice" swaps it for four buttons.
+document.querySelectorAll(".answer-mode-opt").forEach((btn) => {
+    btn.onclick = () => {
+        selectedAnswerMode = btn.dataset.answerMode;
+        document.querySelectorAll(".answer-mode-opt").forEach((b) => {
+            const active = b === btn;
+            b.classList.toggle("active", active);
+            b.setAttribute("aria-checked", active ? "true" : "false");
+        });
     };
 });
 
@@ -1312,6 +1474,40 @@ let skipRequested = false;
 
 function setSkipStatus(text) {
     document.getElementById("skip-status").textContent = text || "";
+}
+
+// --- multi-choice answering: the four buttons replace #controls entirely for
+// the round. Built from the server's `choices` list every question, never
+// reused, so a stale option can't survive into the next round. ---
+let choiceLockedOut = false;   // true once this round's single guess is spent
+
+// shared by multiplayer and solo — same markup, different submit callback
+function renderChoiceButtons(containerId, choices, onPick) {
+    const box = document.getElementById(containerId);
+    box.innerHTML = "";
+    choices.forEach((choice) => {
+        const btn = document.createElement("button");
+        btn.className = "choice-btn";
+        btn.type = "button";
+        btn.textContent = choice;   // textContent, not innerHTML — never inject question data as markup
+        btn.onclick = () => onPick(choice, btn);
+        box.appendChild(btn);
+    });
+    box.style.display = "grid";
+}
+
+function clearChoiceButtons(containerId) {
+    const box = document.getElementById(containerId);
+    box.innerHTML = "";
+    box.style.display = "none";
+}
+
+// one guess per round: grey everything, and mark the one they actually picked
+function lockChoiceButtons(containerId, pickedBtn) {
+    document.querySelectorAll("#" + containerId + " .choice-btn").forEach((b) => {
+        b.disabled = true;
+    });
+    if (pickedBtn) { pickedBtn.classList.add("chosen-wrong"); }
 }
 
 // mirrors clearPostgameState()'s job, but for the live-round skip vote —

@@ -275,7 +275,8 @@
   .diff-opt,
   .target-opt,
   .op-opt,
-  .geo-opt {
+  .geo-opt,
+  .answer-mode-opt {
     font-weight: 600;
     background: none;
     color: var(--soft);
@@ -283,7 +284,7 @@
     border-radius: 999px;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
   }
-  .cat-opt, .diff-opt, .target-opt, .geo-opt {
+  .cat-opt, .diff-opt, .target-opt, .geo-opt, .answer-mode-opt {
     font-size: 0.78rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -318,9 +319,10 @@
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(170, 176, 200, 0.4);
   }
-  .cat-opt:hover, .diff-opt:hover, .target-opt:hover, .op-opt:hover, .geo-opt:hover { border-color: #4d5b8e; color: var(--text); }
-  /* single-select (category, difficulty, race-to): a RADIO language — outline + tint, one can ever be on */
-  .cat-opt.active, .diff-opt.active, .target-opt.active {
+  .cat-opt:hover, .diff-opt:hover, .target-opt:hover, .op-opt:hover, .geo-opt:hover,
+  .answer-mode-opt:hover { border-color: #4d5b8e; color: var(--text); }
+  /* single-select (category, difficulty, race-to, answering): a RADIO language — outline + tint, one can ever be on */
+  .cat-opt.active, .diff-opt.active, .target-opt.active, .answer-mode-opt.active {
     background: rgba(0, 176, 255, 0.12);
     border-color: var(--blue);
     color: var(--blue);
@@ -1000,6 +1002,40 @@
   #controls, #solo-controls {
     display: flex;
     gap: 0.6rem;
+  }
+
+  /* --- geography "multi choice": four tappable answers replacing the input.
+     display:none is the resting state; JS flips it to grid only when a
+     question actually arrives carrying choices --- */
+  #answer-choices, #solo-answer-choices {
+    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    width: min(30rem, 92vw);
+  }
+  .choice-btn {
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.85rem 0.7rem;   /* generous vertical hit area — this is the primary control in choice mode */
+    background: var(--panel);
+    color: var(--text);
+    border: 2px solid var(--edge);
+    border-radius: 12px;
+    word-break: break-word;    /* "Ouagadougou" must not overflow its button */
+  }
+  .choice-btn:hover:not(:disabled) { border-color: var(--blue); background: rgba(0, 176, 255, 0.1); }
+  /* one guess per round (see locked_out in main.py): after a click every
+     button greys out, so the UI states the rule before the server enforces it */
+  .choice-btn:disabled { opacity: 0.4; cursor: default; }
+  /* the global `button:hover` fill would otherwise still paint a dead button
+     coral under a resting cursor — it outranks .choice-btn's own background */
+  .choice-btn:disabled:hover { background: var(--panel); }
+  .choice-btn.chosen-wrong,
+  .choice-btn.chosen-wrong:hover {
+    background: rgba(255, 82, 82, 0.12);
+    border-color: var(--red);
+    color: var(--red);
+    opacity: 1;   /* the one you actually picked stays legible while the rest fade */
   }
 
   /* --- geography's "idk, skip" — display:none is the resting state; JS only

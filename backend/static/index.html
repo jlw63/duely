@@ -83,6 +83,13 @@
           <button class="geo-opt active" data-geo="capital" role="checkbox" aria-checked="true">capitals</button>
         </div>
       </div>
+      <div class="setting-group" id="answer-mode-group" style="display: none;">
+        <span class="setting-label">answering</span>
+        <div id="answer-mode-picker" role="radiogroup" aria-label="how to answer">
+          <button class="answer-mode-opt active" data-answer-mode="type" role="radio" aria-checked="true">type it</button>
+          <button class="answer-mode-opt" data-answer-mode="choice" role="radio" aria-checked="false">multi choice</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -133,6 +140,7 @@
       <input id="solo-answer" type="text" inputmode="numeric" placeholder="answer" autocomplete="off">
       <button id="solo-send">go</button>
     </div>
+    <div id="solo-answer-choices"></div>
   </div>
 
   <div id="solo-result">
@@ -209,6 +217,9 @@
     <input id="answer" type="text" inputmode="numeric" placeholder="answer" autocomplete="off">
     <button id="send">go</button>
   </div>
+  <!-- geography "multi choice" mode: replaces #controls for the round, filled
+       in by JS from the question message's `choices` (never hardcoded) -->
+  <div id="answer-choices"></div>
   <!-- geography only — shown/hidden by setControlsVisible() in app.js, same
        place #controls itself toggles. Both players must click before a
        question is actually skipped; the server enforces that rule too. -->

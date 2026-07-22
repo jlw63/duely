@@ -16,6 +16,7 @@ VALID_BOT_SKILLS = {"easy", "medium", "hard"}
 BOT_NAMES = {"easy": "Rookie Bot", "medium": "Pro Bot", "hard": "Champion Bot"}
 BOT_DELAY_RANGE = {"easy": (3.0, 5.5), "medium": (1.8, 3.5), "hard": (0.8, 2.0)}   # seconds, randomized per round
 VALID_CATEGORIES = {"math", "geography"}
+VALID_ANSWER_MODES = {"type", "choice"}   # geography only — math is always typed
 
 app = FastAPI()
 
@@ -206,20 +207,48 @@ COUNTRIES = [
 # is hidden in this category (its tiers meant country obscurity, a confusing
 # knob for a casual quiz). "tier" is kept on the data so difficulty could be
 # reintroduced later, but nothing reads it right now.
-def _gen_flag():
+CHOICE_COUNT = 4   # 1 correct + 3 distractors, in "choice" answer mode
+
+
+def _pick_distractors(correct_value, key, n):
+    # wrong answers are drawn from OTHER countries' real values, so every
+    # option is a plausible country/capital rather than obvious filler
+    pool = {c[key] for c in COUNTRIES} - {correct_value}
+    return random.sample(sorted(pool), min(n, len(pool)))
+
+
+def _with_choices(correct_value, key):
+    options = _pick_distractors(correct_value, key, CHOICE_COUNT - 1) + [correct_value]
+    random.shuffle(options)   # or the answer would always sit last
+    return options
+
+
+def _choices_of(answer):
+    # None for math (a bare number) and for type-mode geography — the client
+    # reads its absence as "render the text input, not buttons"
+    return answer.get("choices") if isinstance(answer, dict) else None
+
+
+def _gen_flag(with_choices=False):
     # the ISO code travels as the question "text"; the client turns it into an
     # <img> (display type "flag"). Flag EMOJI were the obvious first choice but
     # Windows' system font doesn't render them — it shows the two country-code
     # letters instead — so an actual image is the only cross-platform option.
     country = random.choice(COUNTRIES)
     accepted = {country["name"].lower()} | {a.lower() for a in country["aliases"]}
-    return country["iso2"].lower(), {"canonical": country["name"], "accepted": accepted}, "flag"
+    answer = {"canonical": country["name"], "accepted": accepted}
+    if with_choices:
+        answer["choices"] = _with_choices(country["name"], "name")
+    return country["iso2"].lower(), answer, "flag"
 
-def _gen_capital():
+def _gen_capital(with_choices=False):
     country = random.choice(COUNTRIES)
     text = f"capital of {country['name']}?"
     accepted = {country["capital"].lower()} | {a.lower() for a in country["capital_aliases"]}
-    return text, {"canonical": country["capital"], "accepted": accepted}, "sentence"
+    answer = {"canonical": country["capital"], "accepted": accepted}
+    if with_choices:
+        answer["choices"] = _with_choices(country["capital"], "capital")
+    return text, answer, "sentence"
 
 GEO_MODES = {"flag": _gen_flag, "capital": _gen_capital}
 DEFAULT_GEO_MODES = ["flag", "capital"]
@@ -236,10 +265,10 @@ def geo_data():
          "capital": c["capital"], "capital_aliases": sorted(c["capital_aliases"])}
         for c in COUNTRIES]}
 
-def gen_geo_question(geo_modes):
+def gen_geo_question(geo_modes, answer_mode="type"):
     valid = [m for m in geo_modes if m in GEO_MODES] or DEFAULT_GEO_MODES   # never trust the client
     mode = random.choice(valid)
-    return GEO_MODES[mode]()
+    return GEO_MODES[mode](answer_mode == "choice")
 
 def gen_question_for_room(game):
     # math's generator returns (text, answer) — a bare number; geography's
@@ -248,13 +277,69 @@ def gen_question_for_room(game):
     # exact-match against. Normalizing math's shape here (display="big")
     # keeps everything downstream (start_round, reconnect resend) uniform.
     if game["category"] == "geography":
-        return gen_geo_question(game["geo_modes"])
+        return gen_geo_question(game["geo_modes"], game["answer_mode"])
     text, answer = gen_question(game["difficulty"], game["ops"])
     return text, answer, "big"
 
-def answer_matches(submitted, correct):
+
+# --- typo tolerance (type mode only) ------------------------------------
+# Nobody should lose a round they knew the answer to because they dropped a
+# letter typing "Ljubljana" at speed. Mirrored in app.js for solo mode —
+# change the thresholds in one place, change them in the other.
+
+def _edit_distance(a, b, cap):
+    # restricted Damerau-Levenshtein: counts an adjacent-letter TRANSPOSITION
+    # as one edit, not two, since "Buhtan" for "Bhutan" is a single slip of
+    # the fingers. Bails out early once every cell in a row exceeds `cap`.
+    if a == b:
+        return 0
+    prev2, prev = None, list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, start=1):
+            cur[j] = min(prev[j] + 1,            # deletion
+                          cur[j - 1] + 1,         # insertion
+                          prev[j - 1] + (ca != cb))   # substitution
+            if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)   # transposition
+        if min(cur) > cap:
+            return cap + 1   # can only grow from here — no point finishing
+        prev2, prev = prev, cur
+    return prev[len(b)]
+
+
+def _typo_threshold(length):
+    # short answers have no slack to give: at 4 characters, one edit is
+    # already a different country ("Chad"/"Chat"), so they stay exact-match
+    if length <= 4:
+        return 0
+    if length <= 8:
+        return 1
+    return 2
+
+
+def _close_enough(submitted, accepted):
+    for candidate in accepted:
+        cap = _typo_threshold(len(candidate))
+        if cap == 0:
+            continue   # exact match was already tried by the caller
+        if abs(len(submitted) - len(candidate)) > cap:
+            continue   # too different in length for any edit budget to bridge
+        if _edit_distance(submitted, candidate, cap) <= cap:
+            return True
+    return False
+
+
+def answer_matches(submitted, correct, answer_mode="type"):
     if isinstance(correct, dict):   # geography: a set of accepted lowercase strings
-        return isinstance(submitted, str) and submitted.strip().lower() in correct["accepted"]
+        if not isinstance(submitted, str):
+            return False
+        guess = submitted.strip().lower()
+        if guess in correct["accepted"]:
+            return True
+        # a clicked button is either exactly right or it isn't — fuzzy
+        # matching there would let a near-miss distractor score
+        return answer_mode == "type" and _close_enough(guess, correct["accepted"])
     return submitted == correct   # math: exact numeric equality
 
 
@@ -267,11 +352,13 @@ async def start_round(room_code):
     game["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
     game["round_token"] += 1   # lets a stale bot-answer task (scheduled for an OLD question) recognize it's too late
     game["skip_requests"] = set()   # a new question means any pending skip votes are stale
+    game["locked_out"] = set()      # ...and a fresh guess for anyone who missed last round
     # scores riding along here (not just on "result"/"game_over") is how a client
     # learns its OPPONENT's real display name — scores is name-keyed, so whichever
     # key isn't "me" IS the opponent, from the very first round, not just after
     # the first point is scored
-    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": game["scores"], "display": display})
+    await manager.broadcast(room_code, {"type": "question", "text": text, "scores": game["scores"],
+                                        "display": display, "choices": _choices_of(answer)})
     if game["bot"]:
         asyncio.create_task(bot_answer(room_code, game["round_token"]))
 
@@ -367,7 +454,8 @@ async def expire_disconnect(room_code, name):
 @app.websocket("/ws/{room_code}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium",
                               target: int = DEFAULT_TARGET, ops: str = "add,sub", display_name: str = "",
-                              bot: str = "", category: str = "math", geo: str = "flag,capital"):
+                              bot: str = "", category: str = "math", geo: str = "flag,capital",
+                              answer_mode: str = "type"):
     # FastAPI reads ?difficulty=...&target=...&ops=... straight off the URL into
     # these parameters (ops arrives as one comma-separated string — repeated
     # query keys would need the pretty +/×/÷/% symbols URL-escaped, so the
@@ -401,6 +489,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                              "question_display": "big",
                              "question_time": None, "fastest": None, "rematch_requests": set(),
                              "skip_requests": set(),   # names who've clicked "idk, skip" on the LIVE question
+                             "locked_out": set(),      # choice mode: names who already burned their one guess this round
                              "pending_disconnects": {},   # name -> asyncio task, while they're mid-reconnect-window
                              "paused": False,   # true while someone's mid-reconnect-window — no scoring off an absent opponent
                              "difficulty": difficulty if difficulty in NUMBER_RANGE else "medium",
@@ -408,6 +497,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                              "ops": requested_ops or DEFAULT_OPS,
                              "category": category if category in VALID_CATEGORIES else "math",
                              "geo_modes": requested_geo or DEFAULT_GEO_MODES,
+                             "answer_mode": answer_mode if answer_mode in VALID_ANSWER_MODES else "type",
                              "bot": None, "round_token": 0}
         for i, sock in enumerate(manager.rooms[room_code], start=1):
             # only THIS request's own connection has a real chosen name available —
@@ -458,7 +548,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 # part of anyone's answer time
                 games[room_code]["question_time"] = time.monotonic()
                 await websocket.send_json({"type": "question", "text": games[room_code]["question_text"],
-                                            "display": games[room_code]["question_display"]})
+                                            "display": games[room_code]["question_display"],
+                                            "choices": _choices_of(games[room_code]["answer"])})
         else:
             # game already exists — this is a normal second player joining
             fallback = f"player{len(manager.rooms[room_code])}"
@@ -482,10 +573,28 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
             if (data.get("type") == "answer"
                     and room_code in games
                     and not games[room_code]["paused"]   # opponent's mid-reconnect — no free points off an absent player
-                    and games[room_code]["answer"] is not None  #no live round -> nothing can score
-                    and answer_matches(data.get("value"), games[room_code]["answer"])):
-                name = games[room_code]["players"][websocket]
-                await record_answer(room_code, name)
+                    and games[room_code]["answer"] is not None):  # no live round -> nothing can score
+                game = games[room_code]
+                name = game["players"][websocket]
+                # choice mode gives ONE guess per round — with only four options,
+                # unlimited clicking would make blind guess-spam a winning
+                # strategy. Enforced here, not just by the client greying its
+                # own buttons, since a crafted socket message would sail past that.
+                is_choice = game["category"] == "geography" and game["answer_mode"] == "choice"
+                if not (is_choice and name in game["locked_out"]):
+                    if answer_matches(data.get("value"), game["answer"], game["answer_mode"]):
+                        await record_answer(room_code, name)
+                    elif is_choice:
+                        game["locked_out"].add(name)
+                        await websocket.send_json({"type": "locked_out"})
+                        # if BOTH sides have now burned their guess, nobody can
+                        # take this round — move on rather than stalling on a
+                        # question no one is able to answer
+                        if len(game["locked_out"]) >= len(game["players"]) and not game["bot"]:
+                            game["answer"] = None       # invalidate BEFORE the awaits below, same race guard as record_answer
+                            game["round_token"] += 1
+                            await manager.broadcast(room_code, {"type": "round_lost"})
+                            await start_round(room_code)
 
             if (data.get("type") == "skip"
                     and room_code in games
