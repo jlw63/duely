@@ -1271,6 +1271,14 @@ function joinTyped() {
 
 function leaveRoom() {
     leaving = true;        // set BEFORE close(), so our own onclose stays quiet
+    // say so before closing, so the server can end the match at once instead of
+    // holding it open for a reconnect that isn't coming (see the "leave" branch
+    // in main.py). A bare close() is indistinguishable from a dropped wifi.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "leave" }));
+    } else if (currentRoom) {
+        signalLeaveOutOfBand(currentRoom);   // our own socket is already down — see below
+    }
     if (ws) ws.close();
     ws = null;
     me = null;
@@ -1297,6 +1305,23 @@ function leaveRoom() {
     document.getElementById("game").style.display = "none";
     document.getElementById("lobby").style.display = "flex";
     document.getElementById("room").focus();
+}
+
+// Leaving while our OWN connection is already broken (mid-reconnect) leaves no
+// channel to say so on — and staying silent would strand the opponent on a
+// 20-second countdown for someone actively walking away. So we open a
+// throwaway socket whose only job is to carry ?leaving=1 and hang up. The
+// server handles that flag before any rejoin logic, so this never reads as us
+// coming back. Fire-and-forget: if it fails, the grace window still expires
+// and the opponent is told, just later — the old behavior, not a hang.
+function signalLeaveOutOfBand(room) {
+    try {
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        const bye = new WebSocket(proto + "//" + location.host + "/ws/" + room + "?leaving=1");
+        bye.onopen = () => bye.close();
+    } catch (e) {
+        console.warn("couldn't signal leave:", e);
+    }
 }
 
 function sendAnswer() {

@@ -455,7 +455,7 @@ async def expire_disconnect(room_code, name):
 async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: str = "medium",
                               target: int = DEFAULT_TARGET, ops: str = "add,sub", display_name: str = "",
                               bot: str = "", category: str = "math", geo: str = "flag,capital",
-                              answer_mode: str = "type"):
+                              answer_mode: str = "type", leaving: bool = False):
     # FastAPI reads ?difficulty=...&target=...&ops=... straight off the URL into
     # these parameters (ops arrives as one comma-separated string — repeated
     # query keys would need the pretty +/×/÷/% symbols URL-escaped, so the
@@ -464,6 +464,21 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
     # first created, ignored from anyone who joins after. `bot` is the same:
     # only meaningful from the creator, and only on a brand-new room.
     await manager.connect(websocket, room_code)
+
+    # A player whose OWN socket had already dropped can't send a "leave" over it,
+    # so they open a throwaway one carrying ?leaving=1 purely to deliver the news.
+    # Handled before any join/reconnect logic below, so it never counts as the
+    # departing player rejoining (which would flash "opponent reconnected" at the
+    # other side an instant before telling them the match is over).
+    if leaving:
+        if room_code in games:
+            for task in games[room_code]["pending_disconnects"].values():
+                task.cancel()
+            del games[room_code]
+        await manager.broadcast_except(room_code, {"type": "opponent_left"}, websocket)
+        manager.disconnect(websocket, room_code)
+        await websocket.close()
+        return
 
     # duels are 1v1 — reject a third connection instead of silently merging
     # them into someone else's match (easy to hit: an empty join box
@@ -633,6 +648,25 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                 else:
                     # one side is waiting on the other
                     await manager.broadcast(room_code, {"type": "rematch_pending", "name": name})
+
+            # A deliberate exit, not a dropped connection. Both arrive here as a
+            # closed socket otherwise, and the grace window can't tell them
+            # apart — so the leaver announces itself first, and the player left
+            # behind gets the result screen immediately instead of watching a
+            # 20-second countdown for someone who is never coming back.
+            if data.get("type") == "leave" and room_code in games:
+                # any grace timer already ticking for the OTHER player is moot now —
+                # the match is over either way, and leaving it running would delete
+                # a room key that no longer exists
+                for task in games[room_code]["pending_disconnects"].values():
+                    task.cancel()
+                del games[room_code]
+                # tell the other side BEFORE dropping this socket: manager.disconnect
+                # deletes the room entry once it's empty, which broadcast would then
+                # trip over
+                await manager.broadcast_except(room_code, {"type": "opponent_left"}, websocket)
+                manager.disconnect(websocket, room_code)
+                break   # stop reading from a socket whose owner is on their way out
 
             if (data.get("type") == "emote"
                     and room_code in games
