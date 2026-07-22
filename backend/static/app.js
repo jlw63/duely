@@ -24,17 +24,22 @@ function updateSoundToggle() {
     btn.setAttribute("aria-label", soundOn ? "mute sound" : "unmute sound");
 }
 
-// --- session stats: local only, no accounts, one JSON blob in localStorage ---
+// --- session stats: deliberately NOT persisted. These reset on every page
+// load, so the win rate always describes "how am I doing right now" rather
+// than dragging a lifetime average around. The lobby SETTINGS are the
+// opposite — see loadSettings() — since re-picking them every visit is pure
+// friction, while a stale win rate is actively misleading. ---
+let sessionStats = { gamesPlayed: 0, wins: 0, soloBest: 0 };
+
+// a leftover from when these WERE persisted — drop it so an old lifetime
+// total can't reappear if this ever reads localStorage again
+localStorage.removeItem("duely-stats");
+
 function loadStats() {
-    try {
-        const saved = JSON.parse(localStorage.getItem("duely-stats"));
-        return saved || { gamesPlayed: 0, wins: 0, soloBest: 0 };
-    } catch (e) {
-        return { gamesPlayed: 0, wins: 0, soloBest: 0 };   // corrupted storage — start clean rather than crash
-    }
+    return sessionStats;
 }
 function saveStats(stats) {
-    localStorage.setItem("duely-stats", JSON.stringify(stats));
+    sessionStats = stats;
 }
 function recordMultiplayerResult(won) {
     const stats = loadStats();
@@ -798,12 +803,72 @@ function resetStreakBadge() {
     document.getElementById("streak-badge").classList.remove("show", "fade");
 }
 
-let selectedDifficulty = "medium";
-let selectedTarget = "5";
-let selectedOps = ["add", "sub"];   // multi-select — matches the server's own default
-let selectedCategory = "math";
-let selectedGeoModes = ["flag", "capital"];   // multi-select — matches the server's own default
-let selectedAnswerMode = "type";   // geography only: "type" (typo-tolerant text) | "choice" (four buttons)
+// --- lobby settings: remembered across visits (unlike the session stats
+// above). One JSON blob rather than six keys, so a future setting is a field
+// here instead of another localStorage entry to migrate. Every default here
+// must match the SERVER's own fallback (see the websocket_endpoint defaults
+// in main.py) — the two are read independently. ---
+const SETTINGS_DEFAULTS = {
+    difficulty: "medium",
+    target: "5",
+    ops: ["add", "sub"],          // multi-select
+    category: "math",
+    geoModes: ["flag", "capital"], // multi-select
+    answerMode: "type",            // geography only: "type" | "choice"
+};
+
+const VALID_SETTINGS = {
+    difficulty: ["easy", "medium", "hard"],
+    target: ["3", "5", "10", "15", "30"],
+    ops: ["add", "sub", "mul", "div", "mod"],
+    category: ["math", "geography"],
+    geoModes: ["flag", "capital"],
+    answerMode: ["type", "choice"],
+};
+
+// storage is user-editable and survives across deploys, so a saved value can
+// name an option that no longer exists — every field is validated back down
+// to a default rather than trusted, same "never trust the client" instinct
+// the server applies to these exact values
+function loadSettings() {
+    let saved = {};
+    try {
+        saved = JSON.parse(localStorage.getItem("duely-settings")) || {};
+    } catch (e) {
+        saved = {};   // corrupted storage — fall back to defaults rather than crash
+    }
+    const clean = { ...SETTINGS_DEFAULTS };
+    for (const key of Object.keys(SETTINGS_DEFAULTS)) {
+        const value = saved[key];
+        const allowed = VALID_SETTINGS[key];
+        if (Array.isArray(SETTINGS_DEFAULTS[key])) {
+            const kept = Array.isArray(value) ? value.filter((v) => allowed.includes(v)) : [];
+            if (kept.length) { clean[key] = kept; }   // never restore an empty multi-select — nothing to ask
+        } else if (allowed.includes(value)) {
+            clean[key] = value;
+        }
+    }
+    return clean;
+}
+
+function saveSettings() {
+    localStorage.setItem("duely-settings", JSON.stringify({
+        difficulty: selectedDifficulty,
+        target: selectedTarget,
+        ops: selectedOps,
+        category: selectedCategory,
+        geoModes: selectedGeoModes,
+        answerMode: selectedAnswerMode,
+    }));
+}
+
+const savedSettings = loadSettings();
+let selectedDifficulty = savedSettings.difficulty;
+let selectedTarget = savedSettings.target;
+let selectedOps = savedSettings.ops;
+let selectedCategory = savedSettings.category;
+let selectedGeoModes = savedSettings.geoModes;
+let selectedAnswerMode = savedSettings.answerMode;
 
 // ============================================================
 // SOLO PRACTICE — a "ghost timer" instead of an opponent. Runs
@@ -1331,25 +1396,68 @@ document.getElementById("sound-toggle").onclick = () => {
 };
 updateSoundToggle();   // reflect whatever localStorage remembered, on load
 
+// --- the pickers. Every one saves on change and is redrawn from the saved
+// values on load (see applySettingsToUI) — the .active classes in index.html
+// are only the first-visit defaults, never the source of truth. ---
+
+// single-select: exactly one chip in the group carries .active
+function markSingleSelect(selector, isActive) {
+    document.querySelectorAll(selector).forEach((b) => {
+        const active = isActive(b);
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-checked", active ? "true" : "false");
+    });
+}
+
+// multi-select: each chip stands alone, so .active is per-button membership
+function markMultiSelect(selector, datasetKey, chosen) {
+    document.querySelectorAll(selector).forEach((b) => {
+        const active = chosen.includes(b.dataset[datasetKey]);
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-checked", active ? "true" : "false");
+    });
+}
+
+// math and geography need different sub-pickers, so half the card swaps out
+function applyCategoryVisibility() {
+    const isGeo = selectedCategory === "geography";
+    document.getElementById("ops-group").style.display = isGeo ? "none" : "flex";
+    document.getElementById("geo-modes-group").style.display = isGeo ? "flex" : "none";
+    // geography ignores difficulty entirely — its tiers meant country
+    // obscurity, but that's a confusing knob for a casual quiz, so the
+    // whole row is hidden and the server draws from all countries (see
+    // the mixed-tier note in gen_geo_question / _countries_for_tier)
+    document.getElementById("difficulty-group").style.display = isGeo ? "none" : "flex";
+    // type-vs-multi-choice is meaningless for math — a number has no spelling
+    document.getElementById("answer-mode-group").style.display = isGeo ? "flex" : "none";
+}
+
+// redraw every picker from the restored values. Without this the chips would
+// keep index.html's hardcoded defaults highlighted while the variables behind
+// them said something else — the settings would work but LOOK unsaved.
+function applySettingsToUI() {
+    markSingleSelect(".diff-opt", (b) => b.dataset.difficulty === selectedDifficulty);
+    markSingleSelect(".target-opt", (b) => b.dataset.target === selectedTarget);
+    markSingleSelect(".cat-opt", (b) => b.dataset.category === selectedCategory);
+    markSingleSelect(".answer-mode-opt", (b) => b.dataset.answerMode === selectedAnswerMode);
+    markMultiSelect(".op-opt", "op", selectedOps);
+    markMultiSelect(".geo-opt", "geo", selectedGeoModes);
+    applyCategoryVisibility();
+}
+
 document.querySelectorAll(".diff-opt").forEach((btn) => {
     btn.onclick = () => {
         selectedDifficulty = btn.dataset.difficulty;
-        document.querySelectorAll(".diff-opt").forEach((b) => {
-            const active = b === btn;
-            b.classList.toggle("active", active);
-            b.setAttribute("aria-checked", active ? "true" : "false");
-        });
+        markSingleSelect(".diff-opt", (b) => b === btn);
+        saveSettings();
     };
 });
 
 document.querySelectorAll(".target-opt").forEach((btn) => {
     btn.onclick = () => {
         selectedTarget = btn.dataset.target;
-        document.querySelectorAll(".target-opt").forEach((b) => {
-            const active = b === btn;
-            b.classList.toggle("active", active);
-            b.setAttribute("aria-checked", active ? "true" : "false");
-        });
+        markSingleSelect(".target-opt", (b) => b === btn);
+        saveSettings();
     };
 });
 
@@ -1359,21 +1467,9 @@ document.querySelectorAll(".target-opt").forEach((btn) => {
 document.querySelectorAll(".cat-opt").forEach((btn) => {
     btn.onclick = () => {
         selectedCategory = btn.dataset.category;
-        document.querySelectorAll(".cat-opt").forEach((b) => {
-            const active = b === btn;
-            b.classList.toggle("active", active);
-            b.setAttribute("aria-checked", active ? "true" : "false");
-        });
-        const isGeo = selectedCategory === "geography";
-        document.getElementById("ops-group").style.display = isGeo ? "none" : "flex";
-        document.getElementById("geo-modes-group").style.display = isGeo ? "flex" : "none";
-        // geography ignores difficulty entirely — its tiers meant country
-        // obscurity, but that's a confusing knob for a casual quiz, so the
-        // whole row is hidden and the server draws from all countries (see
-        // the mixed-tier note in gen_geo_question / _countries_for_tier)
-        document.getElementById("difficulty-group").style.display = isGeo ? "none" : "flex";
-        // type-vs-multi-choice is meaningless for math — a number has no spelling
-        document.getElementById("answer-mode-group").style.display = isGeo ? "flex" : "none";
+        markSingleSelect(".cat-opt", (b) => b === btn);
+        applyCategoryVisibility();
+        saveSettings();
     };
 });
 
@@ -1382,11 +1478,8 @@ document.querySelectorAll(".cat-opt").forEach((btn) => {
 document.querySelectorAll(".answer-mode-opt").forEach((btn) => {
     btn.onclick = () => {
         selectedAnswerMode = btn.dataset.answerMode;
-        document.querySelectorAll(".answer-mode-opt").forEach((b) => {
-            const active = b === btn;
-            b.classList.toggle("active", active);
-            b.setAttribute("aria-checked", active ? "true" : "false");
-        });
+        markSingleSelect(".answer-mode-opt", (b) => b === btn);
+        saveSettings();
     };
 });
 
@@ -1403,6 +1496,7 @@ document.querySelectorAll(".geo-opt").forEach((btn) => {
         }
         btn.classList.toggle("active", !isActive);
         btn.setAttribute("aria-checked", (!isActive).toString());
+        saveSettings();
     };
 });
 
@@ -1420,8 +1514,11 @@ document.querySelectorAll(".op-opt").forEach((btn) => {
         }
         btn.classList.toggle("active", !isActive);
         btn.setAttribute("aria-checked", (!isActive).toString());
+        saveSettings();
     };
 });
+
+applySettingsToUI();   // restore whatever was remembered, before anything is clicked
 document.getElementById("room").addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinTyped();
 });
