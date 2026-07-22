@@ -164,12 +164,23 @@ function shakeWrong(elementId) {
     box.classList.add("shake");         // one-shot motion — removed by the animationend listener below
 }
 
+let isGeoMatch = false;   // set from "welcome" — gates the skip row, math has no use for it
+
+// the one place #controls' visibility changes — #skip-row rides along with it
+// (geography only), so every caller that used to touch #controls directly
+// can't forget the skip button and leave it showing over a math round or a
+// postgame screen
+function setControlsVisible(visible) {
+    document.getElementById("controls").style.display = visible ? "flex" : "none";
+    document.getElementById("skip-row").style.display = (visible && isGeoMatch) ? "flex" : "none";
+}
+
 // waiting = code-sharing hero; match = question + pips + input. Never both.
 function setWaiting(w) {
     document.getElementById("wait").style.display = w ? "flex" : "none";
     document.getElementById("question").style.display = w ? "none" : "block";
     document.getElementById("score").style.display = w ? "none" : "flex";
-    document.getElementById("controls").style.display = w ? "none" : "flex";
+    setControlsVisible(!w);
     document.getElementById("room-chip").style.display = w ? "none" : "";  // hero code IS the room; chip returns for the match
     if (w) { document.getElementById("pulse").style.display = "none"; }
     if (!w) { clearPostgameState(); }
@@ -210,6 +221,7 @@ function hideConnectionStatus() {
 function setMatchPaused(paused) {
     document.getElementById("answer").disabled = paused;
     document.getElementById("send").disabled = paused;
+    document.getElementById("skip-btn").disabled = paused || skipRequested;   // stays disabled after unpause if already voted this round
     document.getElementById("pulse").classList.toggle("paused", paused);
 }
 
@@ -251,7 +263,7 @@ function startOpponentGraceCountdown(totalSeconds) {
     clearInterval(opponentGraceInterval);
     setMatchPaused(true);
     document.getElementById("pulse").style.display = "none";
-    document.getElementById("controls").style.display = "none";
+    setControlsVisible(false);
     const questionEl = document.getElementById("question");
     questionEl.classList.remove("sentence");   // this overlay's own text is always short, regardless of the live question's style
     const tick = () => {
@@ -271,7 +283,7 @@ function stopOpponentGraceCountdown() {
     setMatchPaused(false);
     renderQuestion(lastQuestionText, lastQuestionDisplay);
     document.getElementById("pulse").style.display = "block";
-    document.getElementById("controls").style.display = "flex";
+    setControlsVisible(true);
 }
 
 let deathmatchInterval = null;
@@ -283,7 +295,7 @@ let deathmatchInterval = null;
 function startDeathmatchCountdown(totalSeconds) {
     document.body.classList.add("deathmatch");
     document.getElementById("pulse").style.display = "none";
-    document.getElementById("controls").style.display = "none";
+    setControlsVisible(false);
     const q = document.getElementById("question");
     q.classList.remove("sentence");   // this overlay's own text is always short, regardless of the live question's style
     let remaining = Math.round(totalSeconds);
@@ -321,7 +333,7 @@ function startMatchStartCountdown(names) {
     if (other) { opponentName = other; }
     setWaiting(false);
     document.getElementById("pulse").style.display = "none";
-    document.getElementById("controls").style.display = "none";
+    setControlsVisible(false);
     document.getElementById("result-row").style.display = "none";   // the countdown screen replaces it, not sits beside it
     document.getElementById("ms-you").textContent = "you";
     document.getElementById("ms-them").textContent = theirLabel();
@@ -360,7 +372,7 @@ function giveUpReconnecting() {
     hideMatchStartScreen();
     document.getElementById("question").textContent = "connection lost";
     document.getElementById("pulse").style.display = "none";
-    document.getElementById("controls").style.display = "none";
+    setControlsVisible(false);
     document.getElementById("rematch").style.display = "none";   // no one to rematch with
     document.getElementById("postgame-actions").style.display = "flex";  // reveals "back to lobby"
 }
@@ -460,6 +472,7 @@ ws.onmessage = (e) => {
         document.getElementById("answer").classList.remove("wrong", "shake");  // fresh round, clear the last miss
         submissionPending = false;
         clearTimeout(submissionTimer);
+        resetSkipState();   // a fresh question means any pending skip vote is stale
     }
     if (msg.type === "result") {
         updateScore(msg.scores);
@@ -474,7 +487,7 @@ ws.onmessage = (e) => {
     if (msg.type === "game_over") {
         updateScore(msg.scores);
         document.getElementById("pulse").style.display = "none";
-        document.getElementById("controls").style.display = "none";  // nothing left to answer
+        setControlsVisible(false);   // nothing left to answer
         clearTimeout(streakFadeTimer);
         document.getElementById("streak-badge").classList.remove("show", "fade");  // final-score is the story now, not the streak
         // clearPostgameState() runs FIRST — it resets score/final-score to their
@@ -519,6 +532,20 @@ ws.onmessage = (e) => {
             }
         }
     }
+    if (msg.type === "skip_pending") {
+        const isMe = msg.name === me;
+        if (isMe) {
+            setSkipStatus("waiting for " + theirLabel() + "…");
+        } else {
+            setSkipStatus(theirLabel() + " wants to skip");
+            if (!skipRequested) {
+                document.getElementById("skip-btn").disabled = false;
+            }
+        }
+    }
+    if (msg.type === "skipped") {
+        setSkipStatus("skipped!");   // the "question" message right behind this one clears it via resetSkipState()
+    }
     if (msg.type === "opponent_left") {
         setWaiting(false);   // in case they bailed before the match even started
         hideConnectionStatus();
@@ -529,7 +556,7 @@ ws.onmessage = (e) => {
         stopDeathmatchCountdown();
         document.getElementById("question").textContent = "opponent left the game";
         document.getElementById("pulse").style.display = "none";
-        document.getElementById("controls").style.display = "none";
+        setControlsVisible(false);
         document.getElementById("score").style.display = "none";
         document.getElementById("final-score").style.display = "flex";  // the score as it stood when they bailed
         document.getElementById("rematch").style.display = "none";   // no one to rematch with
@@ -566,6 +593,7 @@ ws.onmessage = (e) => {
         const isTextCategory = msg.category === "geography";
         answerBox.inputMode = isTextCategory ? "text" : "numeric";
         answerBox.classList.toggle("text-answer", isTextCategory);
+        isGeoMatch = isTextCategory;   // gates the skip row — read by every setControlsVisible() call from here on
         const chip = document.getElementById("me-chip");
         chip.textContent = "you’re cyan ▸";
         chip.classList.add("cyan");
@@ -1061,6 +1089,8 @@ function leaveRoom() {
     chip.classList.remove("cyan");
     document.getElementById("answer").value = "";
     clearPostgameState();   // hides postgame-actions, which #again lives inside — no separate reset needed
+    resetSkipState();
+    isGeoMatch = false;
     // swap screens back
     document.getElementById("game").style.display = "none";
     document.getElementById("lobby").style.display = "flex";
@@ -1099,6 +1129,15 @@ document.getElementById("rematch").onclick = () => {
     rematchBtn.textContent = "waiting…";
     setPostgameStatus("waiting for " + theirLabel() + "…");
     ws.send(JSON.stringify({ type: "rematch" }));
+};
+document.getElementById("skip-btn").onclick = () => {
+    if (!ws || skipRequested) return;
+    skipRequested = true;
+    const skipBtn = document.getElementById("skip-btn");
+    skipBtn.disabled = true;
+    skipBtn.textContent = "waiting…";
+    setSkipStatus("waiting for " + theirLabel() + "…");
+    ws.send(JSON.stringify({ type: "skip" }));
 };
 document.getElementById("create").onclick = createDuel;
 document.getElementById("join").onclick = joinTyped;
@@ -1269,6 +1308,21 @@ if (inviteRoom) {
 }
 
 let rematchRequested = false;
+let skipRequested = false;
+
+function setSkipStatus(text) {
+    document.getElementById("skip-status").textContent = text || "";
+}
+
+// mirrors clearPostgameState()'s job, but for the live-round skip vote —
+// called whenever a new question makes any prior vote stale
+function resetSkipState() {
+    skipRequested = false;
+    const skipBtn = document.getElementById("skip-btn");
+    skipBtn.disabled = false;
+    skipBtn.textContent = "idk, skip ▸";
+    setSkipStatus("");
+}
 
 function setPostgameStatus(text) {
     const note = document.getElementById("postgame-status");

@@ -266,6 +266,7 @@ async def start_round(room_code):
     game["question_display"] = display   # "big" (math/flags) or "sentence" (capital prompts) — see #question.sentence
     game["question_time"] = time.monotonic()  # for "fastest answer" — clock time, immune to system-clock changes
     game["round_token"] += 1   # lets a stale bot-answer task (scheduled for an OLD question) recognize it's too late
+    game["skip_requests"] = set()   # a new question means any pending skip votes are stale
     # scores riding along here (not just on "result"/"game_over") is how a client
     # learns its OPPONENT's real display name — scores is name-keyed, so whichever
     # key isn't "me" IS the opponent, from the very first round, not just after
@@ -399,6 +400,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
         games[room_code] = {"answer": None, "scores": {}, "players": {}, "question_text": None,
                              "question_display": "big",
                              "question_time": None, "fastest": None, "rematch_requests": set(),
+                             "skip_requests": set(),   # names who've clicked "idk, skip" on the LIVE question
                              "pending_disconnects": {},   # name -> asyncio task, while they're mid-reconnect-window
                              "paused": False,   # true while someone's mid-reconnect-window — no scoring off an absent opponent
                              "difficulty": difficulty if difficulty in NUMBER_RANGE else "medium",
@@ -484,6 +486,27 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, difficulty: s
                     and answer_matches(data.get("value"), games[room_code]["answer"])):
                 name = games[room_code]["players"][websocket]
                 await record_answer(room_code, name)
+
+            if (data.get("type") == "skip"
+                    and room_code in games
+                    and games[room_code]["category"] == "geography"   # never trust the client — math has no skip button
+                    and not games[room_code]["paused"]   # opponent's mid-reconnect — nothing live to skip
+                    and games[room_code]["answer"] is not None):   # no live round -> nothing to skip
+                game = games[room_code]
+                name = game["players"][websocket]
+                game["skip_requests"].add(name)
+                wanted = len(game["skip_requests"])
+                needed = len(game["players"])   # both real players — a bot never votes, so a bot room resolves on one click
+                if wanted >= needed:
+                    # invalidate the round FIRST, before the broadcast's await — same
+                    # same-tick-race guard as record_answer, so a reply that lands in
+                    # the same instant can't score off a question that's being skipped
+                    game["answer"] = None
+                    game["round_token"] += 1
+                    await manager.broadcast(room_code, {"type": "skipped"})
+                    await start_round(room_code)
+                else:
+                    await manager.broadcast(room_code, {"type": "skip_pending", "name": name})
 
             if (data.get("type") == "rematch"
                     and room_code in games):

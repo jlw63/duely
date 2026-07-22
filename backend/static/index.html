@@ -209,6 +209,13 @@
     <input id="answer" type="text" inputmode="numeric" placeholder="answer" autocomplete="off">
     <button id="send">go</button>
   </div>
+  <!-- geography only — shown/hidden by setControlsVisible() in app.js, same
+       place #controls itself toggles. Both players must click before a
+       question is actually skipped; the server enforces that rule too. -->
+  <div id="skip-row">
+    <button id="skip-btn" type="button">idk, skip &#9656;</button>
+    <p id="skip-status" aria-live="polite"></p>
+  </div>
   <div id="postgame-status" class="postgame-status" aria-live="polite"></div>
   <div id="postgame-actions">
     <button id="rematch" class="primary">rematch</button>
