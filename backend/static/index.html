@@ -47,7 +47,7 @@
           <button class="cat-opt" data-category="geography" role="radio" aria-checked="false">geography</button>
         </div>
       </div>
-      <div class="setting-group">
+      <div class="setting-group" id="difficulty-group">
         <span class="setting-label">difficulty</span>
         <div id="difficulty" role="radiogroup" aria-label="difficulty">
           <!-- ranges here must match NUMBER_RANGE in main.py — this is display copy, not logic, so it can't enforce itself -->
@@ -130,7 +130,7 @@
     <div id="solo-timer-num" aria-hidden="true"></div>
     <div id="solo-streak"></div>
     <div id="solo-controls">
-      <input id="solo-answer" type="number" inputmode="numeric" placeholder="answer">
+      <input id="solo-answer" type="text" inputmode="numeric" placeholder="answer" autocomplete="off">
       <button id="solo-send">go</button>
     </div>
   </div>

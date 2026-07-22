@@ -4,6 +4,7 @@ import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
 DEFAULT_TARGET = 5
@@ -17,6 +18,21 @@ BOT_DELAY_RANGE = {"easy": (3.0, 5.5), "medium": (1.8, 3.5), "hard": (0.8, 2.0)}
 VALID_CATEGORIES = {"math", "geography"}
 
 app = FastAPI()
+
+
+# "no-cache" means "always revalidate before reusing" — NOT "never cache". With
+# StaticFiles' ETag, the browser still caches, but checks each load and gets a
+# cheap 304 when unchanged / fresh 200 when changed. Without this, browsers
+# heuristically serve stale JS/CSS on a normal refresh, so edits silently don't
+# show up until a hard-refresh — a real footgun for a single-page app like this.
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path not in ("/health",) and not request.url.path.startswith("/ws"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+app.add_middleware(NoCacheStaticMiddleware)
 
 
 def clean_name(raw, fallback):
@@ -143,12 +159,6 @@ def gen_question(difficulty, ops):
 # way, since that logic only ever touches games[room_code]["difficulty"].
 # ============================================================
 
-def _flag_emoji(iso2):
-    # a flag emoji IS just two "regional indicator" unicode characters, one
-    # per ISO 3166-1 alpha-2 letter — computed instead of hand-typed so there's
-    # no risk of a copy-pasted emoji being the wrong one
-    return "".join(chr(0x1F1E6 + ord(ch) - ord("A")) for ch in iso2.upper())
-
 COUNTRIES = [
     {"iso2": "US", "name": "United States", "aliases": {"us", "usa", "america", "united states of america"},
      "capital": "Washington DC", "capital_aliases": {"washington d.c.", "washington"}, "tier": "easy"},
@@ -192,18 +202,21 @@ COUNTRIES = [
     {"iso2": "LI", "name": "Liechtenstein", "aliases": set(), "capital": "Vaduz", "capital_aliases": set(), "tier": "hard"},
 ]
 
-def _countries_for_tier(tier):
-    pool = [c for c in COUNTRIES if c["tier"] == tier]
-    return pool or COUNTRIES   # unrecognized/missing tier — never trust it, fall back to the full pool
-
-def _gen_flag(tier):
-    country = random.choice(_countries_for_tier(tier))
-    text = _flag_emoji(country["iso2"])
+# geography draws from ALL countries regardless of tier — the difficulty dial
+# is hidden in this category (its tiers meant country obscurity, a confusing
+# knob for a casual quiz). "tier" is kept on the data so difficulty could be
+# reintroduced later, but nothing reads it right now.
+def _gen_flag():
+    # the ISO code travels as the question "text"; the client turns it into an
+    # <img> (display type "flag"). Flag EMOJI were the obvious first choice but
+    # Windows' system font doesn't render them — it shows the two country-code
+    # letters instead — so an actual image is the only cross-platform option.
+    country = random.choice(COUNTRIES)
     accepted = {country["name"].lower()} | {a.lower() for a in country["aliases"]}
-    return text, {"canonical": country["name"], "accepted": accepted}, "big"
+    return country["iso2"].lower(), {"canonical": country["name"], "accepted": accepted}, "flag"
 
-def _gen_capital(tier):
-    country = random.choice(_countries_for_tier(tier))
+def _gen_capital():
+    country = random.choice(COUNTRIES)
     text = f"capital of {country['name']}?"
     accepted = {country["capital"].lower()} | {a.lower() for a in country["capital_aliases"]}
     return text, {"canonical": country["capital"], "accepted": accepted}, "sentence"
@@ -211,10 +224,22 @@ def _gen_capital(tier):
 GEO_MODES = {"flag": _gen_flag, "capital": _gen_capital}
 DEFAULT_GEO_MODES = ["flag", "capital"]
 
-def gen_geo_question(difficulty, geo_modes):
+@app.get("/geo-data")
+def geo_data():
+    # solo mode runs entirely client-side (no per-question round-trip), so it
+    # needs its OWN copy of the country data — served from here rather than
+    # hand-duplicated in JS, keeping COUNTRIES the single source of truth.
+    # (sets aren't JSON-serializable, so aliases go over as sorted lists.)
+    return {"countries": [
+        {"iso2": c["iso2"].lower(), "name": c["name"],
+         "aliases": sorted(c["aliases"]),
+         "capital": c["capital"], "capital_aliases": sorted(c["capital_aliases"])}
+        for c in COUNTRIES]}
+
+def gen_geo_question(geo_modes):
     valid = [m for m in geo_modes if m in GEO_MODES] or DEFAULT_GEO_MODES   # never trust the client
     mode = random.choice(valid)
-    return GEO_MODES[mode](difficulty)
+    return GEO_MODES[mode]()
 
 def gen_question_for_room(game):
     # math's generator returns (text, answer) — a bare number; geography's
@@ -223,7 +248,7 @@ def gen_question_for_room(game):
     # exact-match against. Normalizing math's shape here (display="big")
     # keeps everything downstream (start_round, reconnect resend) uniform.
     if game["category"] == "geography":
-        return gen_geo_question(game["difficulty"], game["geo_modes"])
+        return gen_geo_question(game["geo_modes"])
     text, answer = gen_question(game["difficulty"], game["ops"])
     return text, answer, "big"
 

@@ -306,10 +306,6 @@
     color: var(--dim);
   }
   .diff-opt.active .diff-range { color: rgba(0, 176, 255, 0.75); }
-  /* the 1-20/1-100/1-300 hint is math-specific (see NUMBER_RANGE in main.py) —
-     geography's easy/medium/hard means country obscurity, not a number range,
-     so the hint would be actively misleading left showing in that mode */
-  #difficulty.geo-mode .diff-range { display: none; }
   /* symbols, not words — a fixed circle keeps +, ×, % all reading as equal-weight peers.
      Unselected circles get a visibly brighter border + faint fill than the shared
      default — a lone thin var(--edge) ring reads fine under a text chip's label,
@@ -798,12 +794,21 @@
     font-variant-numeric: tabular-nums;
   }
   /* a full prompt like "capital of Brazil?" is a SENTENCE, not a short
-     expression — the default size (tuned for "68 + 46" or a single flag
-     emoji) would overflow badly at that length. Server tells the client
-     which style a question wants via "display" on the "question" message. */
-  #question.sentence {
+     expression — the default size (tuned for "68 + 46") would overflow badly
+     at that length. Server tells the client which style a question wants via
+     "display" on the "question" message. */
+  #question.sentence, #solo-question.sentence {
     font-size: clamp(1.6rem, 6vw, 2.4rem);
     letter-spacing: normal;
+  }
+  /* flags render as an image (Windows won't draw flag emoji — see _gen_flag) */
+  .flag-img {
+    height: clamp(4rem, 16vw, 6.5rem);
+    width: auto;
+    border-radius: 6px;
+    border: 1px solid var(--edge);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+    vertical-align: middle;
   }
   /* the result deserves more scale than a single round ever gets, plus a
      one-time entrance so it reads as an EVENT rather than a status label */

@@ -215,7 +215,33 @@ function setMatchPaused(paused) {
 
 let opponentGraceInterval = null;
 let lastQuestionText = "";   // so the paused screen can hand the LIVE question back, not a blank one
-let lastQuestionDisplay = "big";   // "big" or "sentence" — restored alongside lastQuestionText
+let lastQuestionDisplay = "big";   // "big" | "sentence" | "flag" — restored alongside lastQuestionText
+
+const FLAG_BASE = "https://flagcdn.com/";   // e.g. https://flagcdn.com/us.svg — free, no key; swap for a bundled set if ever going fully offline
+
+// the ONE place question text becomes on-screen content, shared by the live
+// "question" handler, the reconnect-resume path, AND solo — so a flag renders
+// as an image (not the raw "us") everywhere, identically.
+function renderPrompt(el, text, display) {
+    el.classList.toggle("sentence", display === "sentence");   // smaller size for a full prompt like "capital of Brazil?"
+    if (display === "flag") {
+        el.textContent = "";
+        const img = document.createElement("img");
+        img.className = "flag-img";
+        img.src = FLAG_BASE + encodeURIComponent(text) + ".svg";   // text is the iso2 code (e.g. "us") — from our own dataset, not user input
+        img.alt = "flag";
+        // if flagcdn is blocked/unreachable the image would silently show a
+        // broken-icon — make that failure loud instead so it's diagnosable
+        img.onerror = () => { console.warn("flag image failed to load:", img.src); el.textContent = "🏳 (flag image blocked)"; };
+        el.appendChild(img);
+    } else {
+        el.textContent = text;
+    }
+}
+
+function renderQuestion(text, display) {
+    renderPrompt(document.getElementById("question"), text, display);
+}
 
 // the pause takes over the question area itself — hidden pulse/controls, a
 // countdown standing in where the question was — rather than a small banner
@@ -243,8 +269,7 @@ function stopOpponentGraceCountdown() {
     clearInterval(opponentGraceInterval);
     opponentGraceInterval = null;
     setMatchPaused(false);
-    document.getElementById("question").textContent = lastQuestionText;
-    document.getElementById("question").classList.toggle("sentence", lastQuestionDisplay === "sentence");
+    renderQuestion(lastQuestionText, lastQuestionDisplay);
     document.getElementById("pulse").style.display = "block";
     document.getElementById("controls").style.display = "flex";
 }
@@ -428,10 +453,7 @@ ws.onmessage = (e) => {
         setWaiting(false);                                            // opponent's here — match on
         lastQuestionText = msg.text;
         lastQuestionDisplay = msg.display || "big";
-        document.getElementById("question").textContent = msg.text;
-        // "sentence" (a capital prompt like "capital of Brazil?") gets a smaller
-        // size than the default, tuned for a short math expression or one flag emoji
-        document.getElementById("question").classList.toggle("sentence", lastQuestionDisplay === "sentence");
+        renderQuestion(msg.text, lastQuestionDisplay);
         document.getElementById("pulse").style.display = "block";   // round is live
         document.getElementById("answer").value = "";                 // whatever you were mid-typing belonged to the OLD question
         document.getElementById("answer").focus();                   // hands on keys, every round
@@ -774,7 +796,46 @@ function soloGenQuestion(difficulty, ops) {
     const validOps = ops.filter((op) => op in SOLO_OPERATIONS);
     const list = validOps.length ? validOps : ["add", "sub"];   // never trust selectedOps blindly either
     const op = list[Math.floor(Math.random() * list.length)];
-    return SOLO_OPERATIONS[op](difficulty);
+    const q = SOLO_OPERATIONS[op](difficulty);
+    // math answers are numbers, exact-matched; the {display,isText} fields keep
+    // solo's question shape uniform with geography's (see soloGenGeoQuestion)
+    return { text: q.text, answer: q.answer, display: "big", isText: false };
+}
+
+// --- solo geography: the SAME country data the server uses, fetched once from
+// /geo-data (see that endpoint) rather than duplicated here — so there's a
+// single source of truth. Loaded lazily on entering solo; if it hasn't
+// arrived yet (slow/asleep backend), solo quietly falls back to math. ---
+let geoData = null;
+
+function loadGeoData() {
+    if (geoData) return Promise.resolve(geoData);
+    return fetch("/geo-data")
+        .then((r) => r.json())
+        .then((d) => { geoData = d.countries; return geoData; })
+        .catch(() => { geoData = null; return null; });   // offline/asleep — caller falls back to math
+}
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function soloGenGeoQuestion(geoModes) {
+    const modes = geoModes.filter((m) => m === "flag" || m === "capital");
+    const mode = pick(modes.length ? modes : ["flag", "capital"]);
+    const c = pick(geoData);
+    if (mode === "flag") {
+        const accepted = [c.name.toLowerCase(), ...c.aliases.map((a) => a.toLowerCase())];
+        return { text: c.iso2, answer: accepted, display: "flag", isText: true };
+    }
+    const accepted = [c.capital.toLowerCase(), ...c.capital_aliases.map((a) => a.toLowerCase())];
+    return { text: "capital of " + c.name + "?", answer: accepted, display: "sentence", isText: true };
+}
+
+// geography if that's what's picked AND the data actually loaded; otherwise math
+function soloGenForCategory() {
+    if (selectedCategory === "geography" && geoData && geoData.length) {
+        return soloGenGeoQuestion(selectedGeoModes);
+    }
+    return soloGenQuestion(selectedDifficulty, selectedOps);
 }
 
 // --- the "ghost timer": a single continuously-draining time BANK, not a
@@ -791,6 +852,7 @@ const SOLO_MAX_BANK = 11;     // hard cap — the bar's "full" reading; kept equ
 
 // --- solo state machine: intro -> play -> result, same "screens" pattern as lobby/game ---
 let soloCorrectAnswer = null;
+let soloAnswerIsText = false;   // geography rounds check text, not a parsed Number
 let soloStreak = 0;
 let soloTimeBank = SOLO_BASE_TIME;
 let soloTimerHandle = null;   // requestAnimationFrame id, so leaving mid-run can cancel it cleanly
@@ -806,6 +868,7 @@ function enterSolo() {
     document.getElementById("lobby").style.display = "none";
     document.getElementById("solo").style.display = "flex";
     document.body.classList.add("playing");   // same compact-header treatment as multiplayer
+    if (selectedCategory === "geography") { loadGeoData(); }   // prefetch so it's ready before "start"
     renderSoloBestChip();
     setSoloState("intro");
 }
@@ -817,7 +880,11 @@ function leaveSolo() {
     document.getElementById("lobby").style.display = "flex";
 }
 
-function startSolo() {
+async function startSolo() {
+    // geography needs the country data — guarantee it's here before the run so
+    // there's no silent fall-back to math on a slow first fetch (the timer only
+    // starts after, so the wait never eats into the player's clock)
+    if (selectedCategory === "geography") { await loadGeoData(); }
     soloStreak = 0;
     soloTimeBank = SOLO_BASE_TIME;
     setSoloState("play");
@@ -827,12 +894,15 @@ function startSolo() {
 }
 
 function soloNextQuestion() {
-    const q = soloGenQuestion(selectedDifficulty, selectedOps);
-    soloCorrectAnswer = q.answer;
-    document.getElementById("solo-question").textContent = q.text;
+    const q = soloGenForCategory();
+    soloCorrectAnswer = q.answer;   // a number (math) OR an array of accepted lowercase strings (geo)
+    soloAnswerIsText = q.isText;
+    renderPrompt(document.getElementById("solo-question"), q.text, q.display);
     document.getElementById("solo-question").classList.remove("flash-you", "flash-them");
-    document.getElementById("solo-answer").classList.remove("wrong", "shake");
-    document.getElementById("solo-answer").focus();
+    const box = document.getElementById("solo-answer");
+    box.classList.remove("wrong", "shake");
+    box.inputMode = q.isText ? "text" : "numeric";
+    box.focus();
     updateSoloStreakDisplay();
     // deliberately no timer touch here — the bank keeps draining seamlessly across questions
 }
@@ -898,9 +968,13 @@ function soloFlashMiss() {
 function submitSoloAnswer() {
     const box = document.getElementById("solo-answer");
     if (box.value.trim() === "") return;
-    const value = Number(box.value);
+    // geography: same normalize-and-set-membership check the server does in
+    // answer_matches; math: exact numeric equality
+    const correct = soloAnswerIsText
+        ? soloCorrectAnswer.includes(box.value.trim().toLowerCase())
+        : Number(box.value) === soloCorrectAnswer;
     box.value = "";
-    if (value === soloCorrectAnswer) {
+    if (correct) {
         soloStreak += 1;
         soloTimeBank = Math.min(SOLO_MAX_BANK, soloTimeBank + SOLO_BONUS);   // the reward: top up the bank, capped
         playCorrect();
@@ -1107,9 +1181,11 @@ document.querySelectorAll(".cat-opt").forEach((btn) => {
         const isGeo = selectedCategory === "geography";
         document.getElementById("ops-group").style.display = isGeo ? "none" : "flex";
         document.getElementById("geo-modes-group").style.display = isGeo ? "flex" : "none";
-        // the 1-20/1-100/1-300 hint under difficulty is math-specific — see
-        // #difficulty.geo-mode in style.css
-        document.getElementById("difficulty").classList.toggle("geo-mode", isGeo);
+        // geography ignores difficulty entirely — its tiers meant country
+        // obscurity, but that's a confusing knob for a casual quiz, so the
+        // whole row is hidden and the server draws from all countries (see
+        // the mixed-tier note in gen_geo_question / _countries_for_tier)
+        document.getElementById("difficulty-group").style.display = isGeo ? "none" : "flex";
     };
 });
 
@@ -1173,6 +1249,7 @@ document.getElementById("answer").addEventListener("keydown", (e) => {
     if (["e", "E", "+", "-", "."].includes(e.key)) { e.preventDefault(); }
 });
 document.getElementById("solo-answer").addEventListener("keydown", (e) => {
+    if (soloAnswerIsText) { return; }   // a geography answer is a word — those chars are legit
     if (["e", "E", "+", "-", "."].includes(e.key)) { e.preventDefault(); }
 });
 // the shake is a one-shot animation — clear its class the moment CSS says it finished,
